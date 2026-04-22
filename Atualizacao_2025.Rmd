@@ -5,8 +5,120 @@ date: "2026-04-22"
 output: html_document
 ---
 
+# Introdução
+Ácrescentar Texto]
+
+# Carregando bibliotcas
+
 ```{r, include=FALSE}
+
+library(tidyverse)   # manipulação e visualização de dados
+library(readxl)      # leitura de arquivos Excel
+library(janitor)     # padronização de nomes de colunas
+library(scales)      # formatação de eixos em gráficos
+library(writexl)     # exportação para Excel
+library(sf)          # dados geoespaciais e mapas
+library(ggplot2)     # visualização de dados
 
 ```
 
-## R Markdown
+
+# 01 IDRGP ALVO ===============================================================
+
+## 1.1 Introdução --------------------------------------------------------------
+
+O IDRGP Alvo é o índice de referência que indica qual proporção dos gastos públicos deveria ser destinada a cada subprefeitura. É calculado com base no Índice de Vulnerabilidade Urbana (IVU), elaborado pela SEPLAN/CPMA.
+
+## 1.2 IDRGP 2022 (índice de referência original do ciclo PPA) ----------------
+```{r}
+
+if (aplicar_indice_2022) {
+  
+  df_idrgp <- tibble(
+    subprefeitura = c(
+      "Subprefeitura Capela do Socorro",    "Subprefeitura M'Boi Mirim",
+      "Subprefeitura Campo Limpo",          "Subprefeitura São Mateus",
+      "Subprefeitura Itaquera",             "Subprefeitura Cidade Ademar",
+      "Subprefeitura Freguesia/Brasilândia","Subprefeitura São Miguel Paulista",
+      "Subprefeitura Itaim Paulista",       "Subprefeitura Pirituba/Jaraguá",
+      "Subprefeitura Parelheiros",          "Subprefeitura Jaçanã/Tremembé",
+      "Subprefeitura Sapopemba",            "Subprefeitura de Guaianases",
+      "Subprefeitura Penha",                "Subprefeitura Ipiranga",
+      "Subprefeitura Cidade Tiradentes",    "Subprefeitura Casa Verde/Cachoeirinha",
+      "Subprefeitura Perus/Anhanguera",     "Subprefeitura Butantã",
+      "Subprefeitura Ermelino Matarazzo",   "Subprefeitura de Vila Prudente",
+      "Subprefeitura Sé",                   "Subprefeitura Vila Maria/Vila Guilherme",
+      "Subprefeitura Aricanduva/Formosa/Carrão", "Subprefeitura Jabaquara",
+      "Subprefeitura Mooca",                "Subprefeitura Santana/Tucuruvi",
+      "Subprefeitura Lapa",                 "Subprefeitura Santo Amaro",
+      "Subprefeitura Vila Mariana",         "Subprefeitura Pinheiros"
+    ),
+    idrgp_alvo = c(
+      0.0708, 0.0706, 0.0616, 0.0511, 0.0487, 0.0483, 0.0456, 0.0419,
+      0.0406, 0.0377, 0.0374, 0.0364, 0.0353, 0.0346, 0.0346, 0.0291,
+      0.0278, 0.0270, 0.0258, 0.0250, 0.0210, 0.0183, 0.0179, 0.0167,
+      0.0157, 0.0150, 0.0150, 0.0146, 0.0113, 0.0094, 0.0086, 0.0068
+    )
+  ) |>
+    mutate(
+      subprefeitura = str_replace_all(subprefeitura, "^Subprefeitura de ", ""),
+      subprefeitura = str_replace_all(subprefeitura, "^Subprefeitura ",    ""),
+      subprefeitura = str_replace_all(subprefeitura, "-", "/")
+    ) |>
+    arrange(desc(idrgp_alvo))
+  
+  cat("IDRGP 2022 carregado. Soma do índice:", round(sum(df_idrgp$idrgp_alvo), 6), "\n")
+}
+
+```
+
+## 1.3 IDRGP 2024 (baseado no IVU 2024) ----------------------------------------
+
+```{r}
+
+if (aplicar_indice_2024) {
+  
+  df_idrgp <- read_excel("df_integrado_2024.xlsx", sheet = "Sheet1") |>
+    clean_names() |>
+    select(subprefeitura, idrgp_alvo) |>
+    mutate(
+      subprefeitura = str_replace_all(subprefeitura, "^Subprefeitura de ", ""),
+      subprefeitura = str_replace_all(subprefeitura, "^Subprefeitura ",    "")
+    )
+  
+  cat("IDRGP 2024 carregado. Soma do índice:", round(sum(df_idrgp$idrgp_alvo, na.rm = TRUE), 6), "\n")
+}
+
+```
+
+
+# 02. Atualização IDRGP com ORÇAMENTO 2025 
+
+## 2.1 Introdução 
+
+Nesta seção serão importados e processados os dados de regionalização da execução orçamentária de 2025, provenientes do site da Secretaria de Planejamento e Eficiência. A base é o fundamento do cálculo do IDRGP Real 2025.
+
+## 2.2 Coleta ------------------------------------------------------------------
+
+```{r}
+
+url <- "https://prefeitura.sp.gov.br/cidade/secretarias/upload/seplan/arquivos/Exercicio_2025/basedadosDA_2025.xlsx"
+
+download.file(url, destfile = "basedadosDA_2025.xlsx", mode = "wb")
+
+# Verifica as abas disponíveis no arquivo
+excel_sheets("basedadosDA_2025.xlsx")
+
+# Importa a base de despesas
+original_orcamento <- read_excel("basedadosDA_2025.xlsx")
+
+```
+
+
+
+## 2.3 Exploração --------------------------------------------------------------
+```{r}
+
+```
+
+
