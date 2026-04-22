@@ -1,5 +1,5 @@
 # ==============================================================================
-# IDRGP 2025 — VERSÃO AUTOMATIZADA — V8
+# IDRGP 2025 — VERSÃO AUTOMATIZADA — 
 # ==============================================================================
 # Índice de Distribuição Regional do Gasto Público
 # Secretaria Municipal de Planejamento Urbano — SEPLAN/CPMA
@@ -20,7 +20,7 @@
 #
 # O script considera, essencialmente:
 #   - a região (subprefeitura)
-#   - o valor do gasto público por projeto/atividade
+#   - o valor do gasto público por projeto/atividade (Secretária da Fazenda)
 #
 # Fontes de dados:
 #   1. Dados regionalizados de despesas — Secretaria Municipal da Fazenda
@@ -96,12 +96,10 @@ valor_previsto_ano <- valor_total_ciclo / n_anos_ciclo
 valor_previsto_ciclo_2022_2024 <- valor_total_ciclo * (3 / 4)
 valor_previsto_ciclo_completo  <- valor_total_ciclo
 
-## 1.6 Controle de filtros opcionais ------------------------------------------
+## 1.6 Universo de análise (sem filtros) --------------------------------------
 
-# Filtros de despesa (TRUE = aplicar)
-aplicar_filtro_projetos      <- FALSE  # restringe a projetos/atividades específicos
-aplicar_filtro_funcoes       <- FALSE  # restringe a funções orçamentárias selecionadas
-aplicar_filtro_investimentos <- FALSE  # restringe ao grupo 4 (Investimentos)
+# Diretriz do relatório: os produtos (mapas, gráficos e anexos) devem considerar
+# todo o universo de projetos/atividades e funções, sem seleção.
 
 # Seleção do índice de referência (TRUE em apenas 1 opção)
 aplicar_indice_2022 <- FALSE
@@ -249,39 +247,6 @@ df_orcamento <- df_orcamento |>
 # Verifica resultado
 cat("Subprefeituras após filtro:", n_distinct(df_orcamento$subprefeitura), "\n")
 df_orcamento |> count(subprefeitura, sort = TRUE) |> print(n = 40)
-
-### 2.6.1 Filtro de projetos e atividades (opcional) ---------------------------
-if (aplicar_filtro_projetos) {
-  df_projetos_e_atividades <- read_excel("Análise_Despesas_IDRGP_2025 3.xlsx")
-  lista_proj <- df_projetos_e_atividades$descricao_proj_ativ
-  df_orcamento <- df_orcamento |> filter(descricao_proj_ativ %in% lista_proj)
-  cat("Filtro projetos/atividades aplicado. Valor restante:",
-      sum(df_orcamento$orcamento, na.rm = TRUE), "\n")
-}
-
-### 2.6.2 Filtro de investimentos (opcional) -----------------------------------
-# MCASP, 11ª ed., p. 77–78: grupo de natureza 4 = Investimentos
-if (aplicar_filtro_investimentos) {
-  df_orcamento <- df_orcamento |>
-    mutate(
-      codigo_conta_despesa = as.character(codigo_conta_despesa),
-      grupo_despesa = str_sub(codigo_conta_despesa, 2, 2)
-    ) |>
-    filter(grupo_despesa == "4")
-  cat("Filtro investimentos aplicado. Valor restante:",
-      sum(df_orcamento$orcamento, na.rm = TRUE), "\n")
-}
-
-### 2.6.3 Filtro de funções (opcional) ----------------------------------------
-if (aplicar_filtro_funcoes) {
-  funcoes_idrgp <- c(
-    "Assistência Social", "Trabalho", "Segurança Pública",
-    "Saúde", "Educação", "Saneamento", "Transporte", "Urbanismo", "Habitação"
-  )
-  df_orcamento <- df_orcamento |> filter(descricao_funcao %in% funcoes_idrgp)
-  cat("Filtro funções aplicado. Valor restante:",
-      sum(df_orcamento$orcamento, na.rm = TRUE), "\n")
-}
 
 ## 2.7 Seleção de colunas e agregação ------------------------------------------
 
@@ -453,7 +418,7 @@ st_crs(subprefeitura_sf)
 
 # Tabela de correspondência sigla → nome oficial
 df_siglas <- tibble(
-  sigla = c("AF","BT","CL","CS","CV","AD","CT","EM","FO","GU","IP","TP","IQ",
+  sigla = c("AF","BT","CL","CS","CV","AD","CT","EM","FO","GU","IP","IT","IQ",
             "JA","JT","LA","MB","MO","PA","PE","PR","PI","PJ","ST","SA","SM",
             "MP","SB","SE","MG","VM","VP"),
   subprefeitura = c(
@@ -476,7 +441,9 @@ subprefeitura_sf <- subprefeitura_sf |>
   rename(sigla = sg_subpref) |>
   left_join(df_siglas, by = "sigla") |>
   mutate(
-    subprefeitura = str_squish(subprefeitura),
+    # Fallback para garantir subprefeitura não-NA mesmo se houver sigla nova no SHP.
+    subprefeitura = coalesce(subprefeitura, nm_subpref),
+    subprefeitura = str_squish(as.character(subprefeitura)),
     join_key      = norm_name(subprefeitura)
   ) |>
   select(sigla, subprefeitura, join_key, geometry)
@@ -485,6 +452,19 @@ subprefeitura_sf <- subprefeitura_sf |>
 
 cat("Linhas no shapefile:", nrow(subprefeitura_sf), "(esperado: 32)\n")
 cat("Subprefeituras com NA:", sum(is.na(subprefeitura_sf$subprefeitura)), "\n")
+
+if (any(is.na(subprefeitura_sf$subprefeitura))) {
+  siglas_sem_nome <- subprefeitura_sf |>
+    st_drop_geometry() |>
+    filter(is.na(subprefeitura)) |>
+    distinct(sigla) |>
+    pull(sigla)
+  stop(
+    "ERRO: há subprefeituras com NA no shapefile após padronização. Siglas sem nome: ",
+    paste(siglas_sem_nome, collapse = ", "),
+    ". Verifique df_siglas e/ou o shapefile."
+  )
+}
 
 ## 4.5 Conclusão ---------------------------------------------------------------
 
@@ -983,6 +963,14 @@ df_mapa_2022 <- subprefeitura_sf |>
     by = "join_key"
   )
 
+if (any(is.na(df_mapa_2022$status_2022))) {
+  faltantes <- df_mapa_2022 |>
+    st_drop_geometry() |>
+    filter(is.na(status_2022)) |>
+    transmute(item = paste0(sigla, " (", subprefeitura, ")"))
+  stop("ERRO: mapa 2022 com NA em status_2022 para: ", paste(faltantes$item, collapse = ", "))
+}
+
 mapa1 <- ggplot(df_mapa_2022) +
   geom_sf(aes(fill = status_2022), color = "white", linewidth = 0.3) +
   geom_sf_text(aes(label = sigla), color = "white", size = 2.2, fontface = "bold") +
@@ -1005,6 +993,14 @@ df_mapa_2023 <- subprefeitura_sf |>
       select(join_key, idrgp_real_2023, status_2023),
     by = "join_key"
   )
+
+if (any(is.na(df_mapa_2023$status_2023))) {
+  faltantes <- df_mapa_2023 |>
+    st_drop_geometry() |>
+    filter(is.na(status_2023)) |>
+    transmute(item = paste0(sigla, " (", subprefeitura, ")"))
+  stop("ERRO: mapa 2023 com NA em status_2023 para: ", paste(faltantes$item, collapse = ", "))
+}
 
 mapa2 <- ggplot(df_mapa_2023) +
   geom_sf(aes(fill = status_2023), color = "white", linewidth = 0.3) +
@@ -1029,6 +1025,14 @@ df_mapa_2024 <- subprefeitura_sf |>
     by = "join_key"
   )
 
+if (any(is.na(df_mapa_2024$status_2024))) {
+  faltantes <- df_mapa_2024 |>
+    st_drop_geometry() |>
+    filter(is.na(status_2024)) |>
+    transmute(item = paste0(sigla, " (", subprefeitura, ")"))
+  stop("ERRO: mapa 2024 com NA em status_2024 para: ", paste(faltantes$item, collapse = ", "))
+}
+
 mapa3 <- ggplot(df_mapa_2024) +
   geom_sf(aes(fill = status_2024), color = "white", linewidth = 0.3) +
   geom_sf_text(aes(label = sigla), color = "white", size = 2.2, fontface = "bold") +
@@ -1043,6 +1047,14 @@ mapa3 <- ggplot(df_mapa_2024) +
 print(mapa3)
 
 ## M4 – Mapa IDRGP Real 2025 --------------------------------------------------
+
+if (any(is.na(df_integrado$status_estatistico))) {
+  faltantes <- df_integrado |>
+    st_drop_geometry() |>
+    filter(is.na(status_estatistico)) |>
+    transmute(item = paste0(sigla, " (", subprefeitura, ")"))
+  stop("ERRO: mapa 2025 com NA em status_estatistico para: ", paste(faltantes$item, collapse = ", "))
+}
 
 mapa4 <- ggplot(df_integrado) +
   geom_sf(aes(fill = status_estatistico), color = "white", linewidth = 0.3) +
@@ -1073,6 +1085,14 @@ df_ciclo_sf <- df_ciclo_sf |>
       TRUE                        ~ "Dentro do IDRGP Alvo"
     )
   )
+
+if (any(is.na(df_ciclo_sf$status_ciclo))) {
+  faltantes <- df_ciclo_sf |>
+    st_drop_geometry() |>
+    filter(is.na(status_ciclo)) |>
+    transmute(item = paste0(sigla, " (", subprefeitura, ")"))
+  stop("ERRO: mapa ciclo com NA em status_ciclo para: ", paste(faltantes$item, collapse = ", "))
+}
 
 mapa5 <- ggplot(df_ciclo_sf) +
   geom_sf(aes(fill = status_ciclo), color = "white", linewidth = 0.3) +
@@ -1230,19 +1250,22 @@ grafico4 <- ggplot(df_longo_plot, aes(y = subprefeitura, x = valor, fill = ano))
         valor_prev_ciclo_total = idrgp_alvo * valor_previsto_ciclo_completo
       ),
     aes(y = subprefeitura, x = valor_prev_ciclo_total, shape = "Valor Previsto Ciclo (R$)"),
-    color = "#c0392b", size = 3, inherit.aes = FALSE
+    shape = 23, fill = "white", color = "#c0392b", stroke = 1.1, size = 3.2, inherit.aes = FALSE
   ) +
   scale_fill_manual(
     values = c(
-      "2022" = "#0ea1cf", "2023" = "#0d6fa8",
-      "2024" = "#1A3D7C", "2025" = "#1A1442"
+      "2022" = "#9BD7EA", "2023" = "#4CB7D8",
+      "2024" = "#1F78B4", "2025" = "#0B3C6D"
     ),
     name = "Ano"
   ) +
-  scale_shape_manual(values = c("Valor Previsto Ciclo (R$)" = 18), name = "") +
+  scale_shape_manual(values = c("Valor Previsto Ciclo (R$)" = 23), name = "") +
   guides(
     fill  = guide_legend(order = 1),
-    shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)
+    shape = guide_legend(
+      override.aes = list(shape = 23, fill = "white", color = "#c0392b", stroke = 1.1, size = 3.2),
+      order = 2
+    )
   ) +
   scale_x_continuous(
     labels = scales::label_number(
@@ -1357,6 +1380,105 @@ write_xlsx(
   path = file.path(pasta_saida, "tabela_teste_estatistico_2025.xlsx")
 )
 
+## 11.5.1 Perfil por Subprefeitura (Projetos/Atividades 2022–2025) ------------
+
+# Produto adicional: tabela de perfil por subprefeitura com todos os projetos/atividades
+# do ciclo (2022–2025). Usa os anexos históricos já existentes + df_anexo (2025).
+
+padroniza_anexo <- function(df, ano_ref) {
+  col_proj <- intersect(c("projeto_atividade", "descricao_proj_ativ"), names(df))[1]
+  col_val  <- intersect(c("valor_liquidado", "valor"), names(df))[1]
+  if (is.na(col_proj) || is.na(col_val)) {
+    stop("ERRO: não foi possível identificar colunas de projeto/atividade e valor no anexo ", ano_ref, ".")
+  }
+  df |>
+    mutate(
+      subprefeitura = str_squish(as.character(subprefeitura)),
+      projeto_atividade = str_squish(as.character(.data[[col_proj]])),
+      valor_liquidado = as.numeric(.data[[col_val]]),
+      ano = as.integer(ano_ref)
+    ) |>
+    select(subprefeitura, projeto_atividade, valor_liquidado, ano)
+}
+
+df_anx_2022 <- read_excel("df_anexo_2022.xlsx") |> clean_names() |> padroniza_anexo(2022)
+df_anx_2023 <- read_excel("df_anexo_2023.xlsx") |> clean_names() |> padroniza_anexo(2023)
+df_anx_2024 <- read_excel("df_anexo_2024.xlsx") |> clean_names() |> padroniza_anexo(2024)
+df_anx_2025 <- df_anexo |> mutate(ano = 2025L) |> select(subprefeitura, projeto_atividade, valor_liquidado, ano)
+
+df_perfil_long <- bind_rows(df_anx_2022, df_anx_2023, df_anx_2024, df_anx_2025) |>
+  mutate(
+    subprefeitura = str_squish(subprefeitura),
+    projeto_atividade = str_squish(projeto_atividade)
+  ) |>
+  filter(!is.na(subprefeitura), !is.na(projeto_atividade))
+
+garante_colunas_anos <- function(df) {
+  for (nm in c("valor_2022", "valor_2023", "valor_2024", "valor_2025")) {
+    if (!nm %in% names(df)) df[[nm]] <- 0
+  }
+  df
+}
+
+df_perfil <- df_perfil_long |>
+  group_by(subprefeitura, projeto_atividade, ano) |>
+  summarise(valor_liquidado = sum(valor_liquidado, na.rm = TRUE), .groups = "drop") |>
+  tidyr::pivot_wider(
+    names_from = ano,
+    values_from = valor_liquidado,
+    names_prefix = "valor_",
+    values_fill = 0
+  ) |>
+  garante_colunas_anos() |>
+  mutate(total_2022_2025 = rowSums(across(starts_with("valor_")), na.rm = TRUE)) |>
+  arrange(subprefeitura, desc(total_2022_2025), projeto_atividade)
+
+# Exporta tabela consolidada (todas as subprefeituras)
+write_xlsx(
+  df_perfil,
+  path = file.path(pasta_saida, "perfil_subprefeituras_projetos_2022_2025.xlsx")
+)
+
+# Exporta 1 planilha por subprefeitura
+pasta_perfil <- file.path(pasta_saida, "Perfil_Subprefeituras_Projetos")
+if (!dir.exists(pasta_perfil)) dir.create(pasta_perfil)
+
+lista_subpref_perfil <- sort(unique(df_perfil$subprefeitura))
+for (sp in lista_subpref_perfil) {
+  df_sp <- df_perfil |>
+    filter(subprefeitura == sp) |>
+    select(-subprefeitura)
+  total_geral <- sum(df_sp$total_2022_2025, na.rm = TRUE)
+  df_sp_final <- bind_rows(
+    df_sp,
+    tibble(
+      projeto_atividade = "TOTAL GERAL",
+      valor_2022 = sum(df_sp$valor_2022, na.rm = TRUE),
+      valor_2023 = sum(df_sp$valor_2023, na.rm = TRUE),
+      valor_2024 = sum(df_sp$valor_2024, na.rm = TRUE),
+      valor_2025 = sum(df_sp$valor_2025, na.rm = TRUE),
+      total_2022_2025 = total_geral
+    )
+  )
+  
+  nome_arquivo <- sp |>
+    str_to_lower() |>
+    str_replace_all("[áàâãä]", "a") |>
+    str_replace_all("[éèêë]",  "e") |>
+    str_replace_all("[íìîï]",  "i") |>
+    str_replace_all("[óòôõö]", "o") |>
+    str_replace_all("[úùûü]",  "u") |>
+    str_replace_all("ç",       "c") |>
+    str_replace_all("[^a-z0-9]", "_") |>
+    str_replace_all("_+", "_") |>
+    str_replace_all("^_|_$", "")
+  
+  write_xlsx(
+    df_sp_final,
+    path = file.path(pasta_perfil, paste0("perfil_", nome_arquivo, "_2022_2025.xlsx"))
+  )
+}
+
 cat("Planilhas Excel exportadas.\n")
 
 ## 11.6 Exporta shapefile e geopackage do IDRGP 2025 --------------------------
@@ -1438,222 +1560,16 @@ cat("  df_integrado_2025.xlsx\n")
 cat("  df_ciclo_2022_2025.xlsx\n")
 cat("  df_longo_2022_2025.xlsx\n")
 cat("  df_anexo_2025.xlsx\n")
-cat("  tabela_teste_estatistico_2025.xlsx\n\n")
+cat("  tabela_teste_estatistico_2025.xlsx\n")
+cat("  perfil_subprefeituras_projetos_2022_2025.xlsx\n")
+cat("  Perfil_Subprefeituras_Projetos/ (32 planilhas)\n\n")
 cat("Geoespacial:\n")
 cat("  idrgp_2025.gpkg                       — IDRGP 2025 (GeoPackage/QGIS)\n")
 cat("  idrgp_ciclo_2022_2025.gpkg            — Ciclo completo (GeoPackage/QGIS)\n")
 cat("  ", shp_nome, ".shp/.dbf/.prj         — Shapefile IDRGP 2025\n\n")
 
 
-# 11.8 PASTA DE DIVULGAÇÃO — PDFs + SHPs + Tabelas por Subprefeitura =========
-
-## 11.8.1 Cria pasta de divulgação --------------------------------------------
-
-pasta_divulgacao <- file.path(pasta_saida, "Divulgacao_IDRGP_2025")
-if (!dir.exists(pasta_divulgacao)) dir.create(pasta_divulgacao)
-
-# Subpastas temáticas
-pasta_mapas_div   <- file.path(pasta_divulgacao, "01_Mapas")
-pasta_graficos_div<- file.path(pasta_divulgacao, "02_Graficos")
-pasta_shp_div     <- file.path(pasta_divulgacao, "03_Shapefiles")
-pasta_tabelas_div <- file.path(pasta_divulgacao, "04_Tabelas_Subprefeituras")
-
-for (p in c(pasta_mapas_div, pasta_graficos_div, pasta_shp_div, pasta_tabelas_div)) {
-  if (!dir.exists(p)) dir.create(p)
-}
-
-## 11.8.2 Exporta mapas em PNG e PDF -------------------------------------------
-
-lista_mapas <- list(
-  mapa1_idrgp_2022              = mapa1,
-  mapa2_idrgp_2023              = mapa2,
-  mapa3_idrgp_2024              = mapa3,
-  mapa4_idrgp_2025              = mapa4,
-  mapa5_idrgp_agregado_2022_2025= mapa5
-)
-
-for (nm in names(lista_mapas)) {
-  # PNG (alta resolução)
-  ggsave(
-    filename = file.path(pasta_mapas_div, paste0(nm, ".png")),
-    plot     = lista_mapas[[nm]],
-    width    = 12, height = 10, dpi = 300
-  )
-  # PDF (vetorial, ideal para publicação)
-  ggsave(
-    filename = file.path(pasta_mapas_div, paste0(nm, ".pdf")),
-    plot     = lista_mapas[[nm]],
-    width    = 12, height = 10, device = cairo_pdf
-  )
-}
-
-cat("Mapas exportados (PNG + PDF) para", pasta_mapas_div, "\n")
-
-## 11.8.3 Exporta gráficos em PNG e PDF ----------------------------------------
-
-lista_graficos <- list(
-  grafico1_idrgp_2025_pct                = grafico1,
-  grafico2_idrgp_agregado_2022_2025_pct  = grafico2,
-  grafico3_idrgp_2025_reais              = grafico3,
-  grafico4_idrgp_serie_2022_2025_reais   = grafico4,
-  grafico_dist_diferencas_2025           = grafico_dist
-)
-
-for (nm in names(lista_graficos)) {
-  ggsave(
-    filename = file.path(pasta_graficos_div, paste0(nm, ".png")),
-    plot     = lista_graficos[[nm]],
-    width    = 14, height = 12, dpi = 300
-  )
-  ggsave(
-    filename = file.path(pasta_graficos_div, paste0(nm, ".pdf")),
-    plot     = lista_graficos[[nm]],
-    width    = 14, height = 12, device = cairo_pdf
-  )
-}
-
-# O gráfico grafico_dist tem proporção diferente
-ggsave(
-  filename = file.path(pasta_graficos_div, "grafico_dist_diferencas_2025.pdf"),
-  plot     = grafico_dist,
-  width    = 10, height = 7, device = cairo_pdf
-)
-
-cat("Gráficos exportados (PNG + PDF) para", pasta_graficos_div, "\n")
-
-## 11.8.4 Copia shapefiles para pasta de divulgação ----------------------------
-
-# Lista todos os arquivos do shapefile IDRGP 2025 gerado na seção 11.6
-arquivos_shp <- list.files(
-  path       = pasta_saida,
-  pattern    = paste0("^", shp_nome),
-  full.names = TRUE
-)
-
-for (arq in arquivos_shp) {
-  file.copy(from = arq, to = file.path(pasta_shp_div, basename(arq)), overwrite = TRUE)
-}
-
-# Copia também os geopackages
-for (gpkg in c("idrgp_2025.gpkg", "idrgp_ciclo_2022_2025.gpkg")) {
-  origem <- file.path(pasta_saida, gpkg)
-  if (file.exists(origem)) {
-    file.copy(from = origem, to = file.path(pasta_shp_div, gpkg), overwrite = TRUE)
-  }
-}
-
-cat("Shapefiles copiados para", pasta_shp_div, "\n")
-cat("  Arquivos copiados:", length(arquivos_shp), "componentes do SHP + 2 GeoPackages\n")
-
-## 11.8.5 Tabelas individuais por subprefeitura (2022–2025) --------------------
-
-# Objetivo: 1 planilha Excel por subprefeitura (32 ao total)
-# Colunas: PROJETO / ATIVIDADE | VALOR LIQUIDADO
-# Última linha: "Total Geral" com a soma
-#
-# Fonte: df_anexo_2022/2023/2024 (arquivos existentes) + df_anexo (2025 atual)
-
-# Lê os anexos históricos com colunas padronizadas
-df_anx_2022 <- read_excel("df_anexo_2022.xlsx") |>
-  clean_names() |>
-  mutate(ano = 2022L)
-
-df_anx_2023 <- read_excel("df_anexo_2023.xlsx") |>
-  clean_names() |>
-  mutate(ano = 2023L)
-
-df_anx_2024 <- read_excel("df_anexo_2024.xlsx") |>
-  clean_names() |>
-  mutate(ano = 2024L)
-
-df_anx_2025 <- df_anexo |>
-  mutate(ano = 2025L)
-
-# Consolida todos os anos
-df_anexo_ciclo <- bind_rows(df_anx_2022, df_anx_2023, df_anx_2024, df_anx_2025) |>
-  # Padroniza nome da coluna de valor se diferente entre anos
-  rename_with(~ ifelse(. == "valor_liquidado", "valor_liquidado", .), everything()) |>
-  group_by(subprefeitura, projeto_atividade) |>
-  summarise(
-    valor_liquidado = sum(valor_liquidado, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  arrange(subprefeitura, desc(valor_liquidado))
-
-# Obtém lista de subprefeituras (ordenada)
-lista_subpref <- sort(unique(df_anexo_ciclo$subprefeitura))
-
-cat("\nGerando", length(lista_subpref), "tabelas individuais por subprefeitura...\n")
-
-# Função auxiliar: formata valor como moeda brasileira
-formata_reais <- function(x) {
-  paste0("R$ ", format(round(x, 2), big.mark = ".", decimal.mark = ",", nsmall = 2))
-}
-
-# Gera uma planilha Excel por subprefeitura
-for (sp in lista_subpref) {
-  
-  # Filtra dados da subprefeitura
-  df_sp <- df_anexo_ciclo |>
-    filter(subprefeitura == sp) |>
-    select(`PROJETO / ATIVIDADE` = projeto_atividade,
-           `VALOR LIQUIDADO (R$)` = valor_liquidado) |>
-    mutate(`VALOR LIQUIDADO (R$)` = round(`VALOR LIQUIDADO (R$)`, 2))
-  
-  # Calcula o total geral
-  total_geral <- sum(df_sp$`VALOR LIQUIDADO (R$)`, na.rm = TRUE)
-  
-  # Adiciona linha de total
-  df_sp_final <- bind_rows(
-    df_sp,
-    tibble(
-      `PROJETO / ATIVIDADE`  = "TOTAL GERAL",
-      `VALOR LIQUIDADO (R$)` = total_geral
-    )
-  )
-  
-  # Cria nome de arquivo seguro (sem caracteres especiais no nome do arquivo)
-  nome_arquivo <- sp |>
-    str_to_lower() |>
-    str_replace_all("[áàâã]", "a") |>
-    str_replace_all("[éèê]",  "e") |>
-    str_replace_all("[íìî]",  "i") |>
-    str_replace_all("[óòôõ]", "o") |>
-    str_replace_all("[úùû]",  "u") |>
-    str_replace_all("ç",      "c") |>
-    str_replace_all("[^a-z0-9]", "_") |>
-    str_replace_all("_+", "_") |>
-    str_trim("both")
-  
-  caminho_xlsx <- file.path(
-    pasta_tabelas_div,
-    paste0("tabela_", nome_arquivo, "_2022_2025.xlsx")
-  )
-  
-  write_xlsx(df_sp_final, path = caminho_xlsx)
-  
-  cat("  ✔", sp, "—", nrow(df_sp), "projetos | Total:", formata_reais(total_geral), "\n")
-}
-
-cat("\n✅", length(lista_subpref), "tabelas exportadas para", pasta_tabelas_div, "\n")
-
-## 11.8.6 Resumo da pasta de divulgação ----------------------------------------
-
-n_png <- length(list.files(pasta_mapas_div,    pattern = "\\.png$")) +
-  length(list.files(pasta_graficos_div,  pattern = "\\.png$"))
-n_pdf <- length(list.files(pasta_mapas_div,    pattern = "\\.pdf$")) +
-  length(list.files(pasta_graficos_div,  pattern = "\\.pdf$"))
-n_shp_arq <- length(list.files(pasta_shp_div))
-n_xlsx    <- length(list.files(pasta_tabelas_div, pattern = "\\.xlsx$"))
-
-cat("\n=== PASTA DE DIVULGAÇÃO — RESUMO ===\n")
-cat("  Localização:", normalizePath(pasta_divulgacao), "\n\n")
-cat("  01_Mapas/:               ", n_png / 2, "mapas × 2 formatos (PNG + PDF)\n")
-cat("  02_Graficos/:            ", n_pdf / 1, "gráficos × 2 formatos (PNG + PDF)\n")
-cat("  03_Shapefiles/:          ", n_shp_arq, "arquivos (SHP + GPKG)\n")
-cat("  04_Tabelas_Subprefeituras/:", n_xlsx, "planilhas (1 por subprefeitura)\n\n")
-
-
+# 12. CONCLUSÃO ===============================================================
 
 total_analisado_bi <- sum(df_integrado$valor, na.rm = TRUE) / 1e9
 total_ciclo_bi     <- sum(df_ciclo$valor_2022_a_2025, na.rm = TRUE) / 1e9
