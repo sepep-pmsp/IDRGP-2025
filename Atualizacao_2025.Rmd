@@ -1,0 +1,12 @@
+---
+title: "RELATÓRIO IDRGP 2025 - VERSÃO AUTOMATIZADA"
+author: "SEPLAN/CPMA"
+date: "2026-04-22"
+output: html_document
+---
+
+```{r, include=FALSE}
+
+```
+
+## R Markdown

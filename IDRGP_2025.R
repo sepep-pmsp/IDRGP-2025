@@ -2,7 +2,7 @@
 # IDRGP 2025 — VERSÃO AUTOMATIZADA — 
 # ==============================================================================
 # Índice de Distribuição Regional do Gasto Público
-# Secretaria Municipal de Planejamento Urbano — SEPLAN/CPMA
+# Secretaria Municipal de Planejamento e Eficiência — SEPLAN/CPMA
 # Prefeitura de São Paulo
 # Atualizado em: 2025
 # ==============================================================================
