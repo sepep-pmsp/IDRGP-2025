@@ -590,31 +590,43 @@ cat("Colunas 2024:", names(df_hist_2024), "\n")
 # O campo de status pode variar entre anos (status_teste_t vs status_wilcoxon)
 
 padroniza_hist <- function(df, ano_ref) {
-  # Coluna de status preferida: status_wilcoxon (disponível em 2022, 2023 e 2024),
-  # com fallback para status_teste_t e depois status_var_percentual.
-  col_status <- intersect(
-    c("status_wilcoxon", "status_teste_t", "status_var_percentual", "status"),
-    names(df)
-  )[1]
+  for (nm in c("status_wilcoxon", "status_teste_t", "status_var_percentual", "status")) {
+    if (!nm %in% names(df)) df[[nm]] <- NA_character_
+  }
   
   df |>
-    mutate(subprefeitura = str_squish(as.character(subprefeitura))) |>
-    select(
-      subprefeitura,
-      valor,
-      idrgp_alvo,
-      idrgp_real,
-      status = all_of(col_status)
+    mutate(
+      subprefeitura = str_squish(as.character(subprefeitura)),
+      status = coalesce(status_wilcoxon, status_teste_t, status_var_percentual, status)
     ) |>
-    rename_with(
-      ~ paste0(., "_", ano_ref),
-      .cols = c("valor", "idrgp_real", "status")
-    )
+    select(subprefeitura, valor, idrgp_alvo, idrgp_real, status) |>
+    rename_with(~ paste0(., "_", ano_ref), .cols = c("valor", "idrgp_real", "status"))
 }
 
 df_h22 <- padroniza_hist(df_hist_2022, 2022)
 df_h23 <- padroniza_hist(df_hist_2023, 2023)
 df_h24 <- padroniza_hist(df_hist_2024, 2024)
+
+# Base auxiliar (sigla) para mapas históricos: evita NA por divergência de nome
+hist_para_mapa <- function(df, ano_ref) {
+  sigla_col <- intersect(c("sigla", "df"), names(df))[1]
+  if (is.na(sigla_col)) stop("ERRO: base histórica ", ano_ref, " não possui coluna de sigla ('sigla' ou 'df').")
+  
+  for (nm in c("status_wilcoxon", "status_teste_t", "status_var_percentual", "status")) {
+    if (!nm %in% names(df)) df[[nm]] <- NA_character_
+  }
+  
+  df |>
+    transmute(
+      sigla = str_squish(as.character(.data[[sigla_col]])),
+      !!paste0("idrgp_real_", ano_ref) := as.numeric(idrgp_real),
+      !!paste0("status_", ano_ref) := coalesce(status_wilcoxon, status_teste_t, status_var_percentual, status)
+    )
+}
+
+df_h22_mapa <- hist_para_mapa(df_hist_2022, 2022)
+df_h23_mapa <- hist_para_mapa(df_hist_2023, 2023)
+df_h24_mapa <- hist_para_mapa(df_hist_2024, 2024)
 
 ## 6.4 Dados do ano atual (2025) para série histórica -------------------------
 
@@ -957,10 +969,8 @@ caption_base <- "Elaboração: SEPLAN/CPMA.\nFonte: Secretaria Municipal da Faze
 # Integra dados históricos 2022 com geometria
 df_mapa_2022 <- subprefeitura_sf |>
   left_join(
-    df_h22 |>
-      mutate(join_key = norm_name(subprefeitura)) |>
-      select(join_key, idrgp_real_2022, status_2022),
-    by = "join_key"
+    df_h22_mapa |> select(sigla, idrgp_real_2022, status_2022),
+    by = "sigla"
   )
 
 if (any(is.na(df_mapa_2022$status_2022))) {
@@ -988,10 +998,8 @@ print(mapa1)
 
 df_mapa_2023 <- subprefeitura_sf |>
   left_join(
-    df_h23 |>
-      mutate(join_key = norm_name(subprefeitura)) |>
-      select(join_key, idrgp_real_2023, status_2023),
-    by = "join_key"
+    df_h23_mapa |> select(sigla, idrgp_real_2023, status_2023),
+    by = "sigla"
   )
 
 if (any(is.na(df_mapa_2023$status_2023))) {
@@ -1019,10 +1027,8 @@ print(mapa2)
 
 df_mapa_2024 <- subprefeitura_sf |>
   left_join(
-    df_h24 |>
-      mutate(join_key = norm_name(subprefeitura)) |>
-      select(join_key, idrgp_real_2024, status_2024),
-    by = "join_key"
+    df_h24_mapa |> select(sigla, idrgp_real_2024, status_2024),
+    by = "sigla"
   )
 
 if (any(is.na(df_mapa_2024$status_2024))) {
