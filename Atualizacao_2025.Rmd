@@ -5,10 +5,22 @@ date: "2026-04-22"
 output: html_document
 ---
 
-# Introdução
-Ácrescentar Texto]
+# Sumário
 
-# Carregando bibliotcas
+0.  Introdução
+1.  IDRFP Alvo
+2.  Base de regionalização do Orçamento 2025
+3.  Análise 2025
+4.  Bases de Regionalização do Orçamento 2022-2025
+5.  Análise 2022-2025
+6.  Ficha das Subprefeituras
+7.  Exportação de arquivos
+
+# Introdução
+
+[ Acrescentar Texto]
+
+## Carregando bibliotecas
 
 ```{r, include=FALSE}
 
@@ -23,6 +35,23 @@ library(ggplot2)     # visualização de dados
 ```
 
 
+## Importando bases
+```{r import bases atualizadas, eval=FALSE, include=FALSE}
+#Orçamento Reguionalizado 2022
+file.copy("C:\\Users\\d088971\\Downloads\\EXECUÇÃO_DA_2022_v2.xlsx", "bases/EXECUÇÃO_DA_2022_v2.xlsx")
+
+#Orçamento Reguionalizado 2023
+download.file("https://orcamento.prefeitura.sp.gov.br/orcamento/uploads/2023/basedadosDA_1223.xlsx", destfile = "bases/basedadosDA_2023.xlsx", mode = "wb")
+
+#Orçamento Reguionalizado 2024
+download.file("https://prefeitura.sp.gov.br/cidade/secretarias/upload/seplan/arquivos/Exercicio_2024/basedadosDA_2024.xlsx", destfile = "bases/basedadosDA_2024.xlsx", mode = "wb")
+
+#Orçamento Reguionalizado 2025
+download.file("https://prefeitura.sp.gov.br/cidade/secretarias/upload/seplan/arquivos/Exercicio_2025/basedadosDA_2025.xlsx", destfile = "bases/basedadosDA_2025.xlsx", mode = "wb")
+
+```
+
+
 # 01 IDRGP ALVO ===============================================================
 
 ## 1.1 Introdução --------------------------------------------------------------
@@ -30,6 +59,7 @@ library(ggplot2)     # visualização de dados
 O IDRGP Alvo é o índice de referência que indica qual proporção dos gastos públicos deveria ser destinada a cada subprefeitura. É calculado com base no Índice de Vulnerabilidade Urbana (IVU), elaborado pela SEPLAN/CPMA.
 
 ## 1.2 IDRGP 2022 (índice de referência original do ciclo PPA) ----------------
+
 ```{r}
 
 if (aplicar_indice_2022) {
@@ -91,10 +121,9 @@ if (aplicar_indice_2024) {
 
 ```
 
+# 02. Atualização IDRGP com ORÇAMENTO 2025
 
-# 02. Atualização IDRGP com ORÇAMENTO 2025 
-
-## 2.1 Introdução 
+## 2.1 Introdução
 
 Nesta seção serão importados e processados os dados de regionalização da execução orçamentária de 2025, provenientes do site da Secretaria de Planejamento e Eficiência. A base é o fundamento do cálculo do IDRGP Real 2025.
 
@@ -102,21 +131,13 @@ Nesta seção serão importados e processados os dados de regionalização da ex
 
 ```{r}
 
-url <- "https://prefeitura.sp.gov.br/cidade/secretarias/upload/seplan/arquivos/Exercicio_2025/basedadosDA_2025.xlsx"
-
-download.file(url, destfile = "basedadosDA_2025.xlsx", mode = "wb")
-
-# Verifica as abas disponíveis no arquivo
-excel_sheets("basedadosDA_2025.xlsx")
-
 # Importa a base de despesas
-original_orcamento <- read_excel("basedadosDA_2025.xlsx")
+original_orcamento <- read_excel("bases\basedadosDA_2025.xlsx")
 
 ```
 
-
-
 ## 2.3 Exploração --------------------------------------------------------------
+
 ```{r}
 
 ```
