@@ -387,12 +387,6 @@ h1 {
   background: rgba(255, 255, 255, 0.03);
 }
 
-.media-grid-white .media-card,
-.media-grid-white .media-btn,
-.media-grid-white .media-card img {
-  background: #ffffff;
-}
-
 .media-btn {
   display: block;
   width: 100%;
