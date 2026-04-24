@@ -108,7 +108,7 @@ na pasta `bases/` e ajustar os nomes abaixo.
 # ============================================================================
 
 # Pasta onde os arquivos realmente estão (use / ou \\ no Windows)
-pasta_dados <- "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/R Markdown/dados"
+pasta_dados <- "dados"
 pasta_dados <- normalizePath(pasta_dados, winslash = "/", mustWork = FALSE)
 
 if (!dir.exists(pasta_dados)) {
@@ -388,7 +388,7 @@ df_integrado <- df_integrado |>
     valor_previsto  = total_valor * idrgp_alvo,
     status_valor    = if_else(valor < valor_previsto,
                               "Valor previsto (R$) não atingido",
-                              "Valor previsto (R$) atingido")
+                              "Valor previsto (R$) superado")
   )
 
 cat("✅ Integração 2025: R$", format(total_valor, big.mark = ".", decimal.mark = ","), "\n")
@@ -522,6 +522,7 @@ df_ciclo_sf <- subprefeitura_sf |>
 
 cat("✅ Consolidação histórica concluída.\n")
 ```
+****Incluir Teste estatístico no chunk acima****
 
 # Mapas
 
@@ -542,7 +543,7 @@ tema_mapa <- theme_void(base_size = 12) +
     legend.title  = element_text(size = 9),
     legend.text   = element_text(size = 8))
 
-caption_base <- "Elaboração: SEPLAN/CPMA.\nFonte: Secretaria Municipal da Fazenda"
+caption_base <- "Elaboração: SEPLAN/CPMA.\nFonte: Secretaria Municipal de Planejamento e Eficiência"
 
 gerar_mapa <- function(sf_data, col_status, titulo, nota = "") {
   ggplot(sf_data) +
