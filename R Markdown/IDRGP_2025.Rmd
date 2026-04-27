@@ -207,6 +207,15 @@ knitr::kable(
 
 Nesta seção, as bases orçamentárias dos **4 anos** do ciclo PPA são importadas e padronizadas por uma **função de limpeza unificada**. Isso garante consistência no tratamento e facilita a atualização futura.
 
+## Análise preliminar das ações orçamentárias regionalizadas
+
+Aqui se busca verificar o quanto se avançou na regionalização no quadriênio, bem como em qual proporção temos a regionalização de cada ação orçamentária
+
+```{r}
+orcamento_ppa<- 
+```
+
+
 ## Função de limpeza unificada
 
 ```{r funcao_limpeza}
