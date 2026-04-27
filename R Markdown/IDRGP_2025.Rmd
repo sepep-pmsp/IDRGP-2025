@@ -209,10 +209,18 @@ Nesta seção, as bases orçamentárias dos **4 anos** do ciclo PPA são importa
 
 ## Análise preliminar das ações orçamentárias regionalizadas
 
-Aqui se busca verificar o quanto se avançou na regionalização no quadriênio, bem como em qual proporção temos a regionalização de cada ação orçamentária
+Aqui se busca verificar o quanto se avançou na regionalização no quadriênio, bem como em qual proporção temos a regionalização de cada ação orçamentária.
 
 ```{r}
-orcamento_ppa<- 
+#criando arquivos paa cada execução orçamentária anual (loa) e para o conjunto dos anos (PPA)
+loa22 <- read_excel(arquivo_2022) %>% 
+  select(-DATA_EXTRAÇÃO)
+loa23 <- read_excel(arquivo_2023)
+loa24 <- read_excel(arquivo_2024)
+loa25 <- read_excel(arquivo_2025)
+orcamento_ppa <- rbind(loa22, loa23, loa24, loa25)
+
+
 ```
 
 
