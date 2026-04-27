@@ -16,21 +16,18 @@ output:
 
 # Introdução
 
-O **IDRGP** (Índice de Distribuição Regional do Gasto Público) mede se a
-distribuição territorial dos gastos públicos municipais está alinhada às
-prioridades sociais e de infraestrutura de cada subprefeitura, expressas no
-**Índice de Vulnerabilidade Urbana (IVU/SEPLAN/CPMA)**.
+O **IDRGP** (Índice de Distribuição Regional do Gasto Público) mede se a distribuição territorial dos gastos públicos municipais está alinhada às prioridades sociais e de infraestrutura de cada subprefeitura. Esse monitoramento se dá a partir da diferença entre os dados da Execução Regionalizada do Orçamento e da Alocação Orçamentária Esperada, expressa a partir do **Índice de Vulnerabilidade Urbana (IVU - 2025)** atualizado por SEPLAN/CPMA.
 
-Este documento consolida a análise do ciclo PPA **2022–2025**, considerando
-**todo o universo** de projetos/atividades e funções, sem seleção.
+Este documento consolida a análise do ciclo PPA **2022–2025**, considerando **todo o universo** de projetos/atividades e funções, sem seleção.
 
 **Fontes de dados:**
 
-- Dados regionalizados de despesas — Secretaria Municipal da Fazenda
-- IDRGP Alvo (2024) — SGM/SEPLAN/CPMA (baseado no IVU)
+- Dados regionalizados da execução orçamentária — Secretaria Municipal de Planejamento e Eficiência
+- AOE ou IDRGP Alvo — SGM/SEPLAN/CPMA (IVU - 2025)
 - Dados cartográficos — GeoSampa (Subprefeituras de São Paulo)
 
-**Referência:** <https://orcamento.sf.prefeitura.sp.gov.br/orcamento/execucao.php>
+**Referência:** <https://prefeitura.sp.gov.br/web/planejamento/w/execucao_orcamentaria>
+
 
 ## Bibliotecas
 
@@ -46,10 +43,7 @@ library(ggplot2)     # gráficos
 
 ## Funções auxiliares
 
-A função `norm_name()` cria uma **chave de integração robusta** entre as
-diversas bases de dados. Remove acentos, converte para minúsculas e
-elimina caracteres não alfabéticos, garantindo que nomes escritos de
-formas ligeiramente diferentes sejam reconhecidos como iguais.
+A função `norm_name()` cria uma chave de integração entre as diversas bases de dados. Remove acentos, converte para minúsculas e elimina caracteres não alfabéticos, garantindo que nomes escritos de formas ligeiramente diferentes sejam reconhecidos como iguais.
 
 ```{r funcao_norm_name}
 norm_name <- function(x) {
@@ -70,9 +64,7 @@ norm_name <- function(x) {
 
 ## Tabela de referência das subprefeituras
 
-Tabela oficial de correspondência **sigla → nome** das 32 subprefeituras.
-Usada para padronizar nomes vindos de diferentes fontes (shapefile,
-orçamento, IVU).
+Tabela oficial de correspondência **sigla → nome** das 32 subprefeituras. Usada para padronizar nomes vindos de diferentes fontes (shapefile, orçamento, IVU).
 
 ```{r df_siglas}
 df_siglas <- tibble(
@@ -97,9 +89,7 @@ df_siglas <- tibble(
 
 ## Caminhos dos arquivos
 
-As bases orçamentárias são arquivos locais obtidos do portal da
-Secretaria da Fazenda. Para atualizar, basta **substituir os arquivos**
-na pasta `bases/` e ajustar os nomes abaixo.
+As bases orçamentárias são arquivos locais de dados coletados até 30/04/2026. Para atualizar, basta **substituir os arquivos** na pasta `dados/` e ajustar os nomes abaixo.
 
 ```{r caminhos}
 
@@ -117,7 +107,7 @@ if (!dir.exists(pasta_dados)) {
 
 # Bases orçamentárias (arquivos locais)
 arquivo_2022 <- file.path(pasta_dados, "basedadosDA_1222_validado.xlsx")
-arquivo_2023 <- file.path(pasta_dados, "basedadosDA_1223_validado.xlsx")
+arquivo_2023 <- file.path(pasta_dados, "basedadosDA_1223.csv.xlsx")
 arquivo_2024 <- file.path(pasta_dados, "basedadosDA_1224_validado.xlsx")
 arquivo_2025 <- file.path(pasta_dados, "basedadosDA_1225_validado.xlsx")
 
@@ -153,14 +143,9 @@ if (length(aux_faltando) > 0) {
 
 ```
 
-# IDRGP Alvo
+# AOE ou IDRGP Alvo
 
-O **IDRGP Alvo** é o índice de referência que indica qual proporção dos
-gastos públicos deveria ser destinada a cada subprefeitura. É calculado
-com base no **IVU** (Índice de Vulnerabilidade Urbana), elaborado pela
-SEPLAN/CPMA.
-
-Neste relatório utiliza-se o **IDRGP Alvo calculado em 2024**.
+O Índice de Alocação Orçamentária Esperada - AOE ou IDRGP Alvo é o índice de referência que indica qual proporção dos gastos públicos deveria ser destinada a cada subprefeitura. Nesta análise utilizaremos a atualização da cesta de indicadores calculada em 2025 e nomeada como Índice de Vulnerabilidade Urbana (IVU) pela SEPLAN/CPMA. Esta é a mesma base utilizada no relatório do IDRGP 2024.
 
 ## Importação do IVU
 
@@ -220,9 +205,16 @@ knitr::kable(
 
 # Dados Orçamentários e Limpeza
 
-Nesta seção, as bases orçamentárias dos **4 anos** do ciclo PPA são
-importadas e padronizadas por uma **função de limpeza unificada**. Isso
-garante consistência no tratamento e facilita a atualização futura.
+Nesta seção, as bases orçamentárias dos **4 anos** do ciclo PPA são importadas e padronizadas por uma **função de limpeza unificada**. Isso garante consistência no tratamento e facilita a atualização futura.
+
+## Análise preliminar das ações orçamentárias regionalizadas
+
+Aqui se busca verificar o quanto se avançou na regionalização no quadriênio, bem como em qual proporção temos a regionalização de cada ação orçamentária
+
+```{r}
+orcamento_ppa<- 
+```
+
 
 ## Função de limpeza unificada
 
@@ -347,10 +339,9 @@ knitr::kable(
 
 # Testes Estatísticos
 
-**Metodologia:** O teste de **Kolmogorov-Smirnov** verifica a normalidade
-das diferenças pareadas. Conforme o resultado, opta-se pelo **teste t pareado**
-(paramétrico) ou **Wilcoxon** (não paramétrico). O intervalo de confiança
-(95%) classifica cada subprefeitura.
+**Metodologia:** O teste de **Kolmogorov-Smirnov** verifica a normalidade das diferenças pareadas. Conforme o resultado, se maior de 0,05, opta-se pelo **teste t pareado** (paramétrico) ou, se menor de 0,05, **Wilcoxon** (não paramétrico). 
+
+Com o teste que analisa a distância entre as distribuições realizado, utiliza-se o intervalo de confiança (95%) para classificar cada subprefeitura em Acima, Abaixo ou Dentro da Alocação Esperada (ou do IDRGP Alvo).
 
 ## Integração dos dados (2025)
 
@@ -723,6 +714,48 @@ df_anexo <- df_2025 |>
 cat("Subprefeituras em df_anexo:", n_distinct(df_anexo$subprefeitura), "\n")
 cat("Valor total:", format(sum(df_anexo$valor_liquidado), big.mark = ".", decimal.mark = ","), "\n")
 ```
+
+## Tabelas para 2022-2025
+* Uma tabela para os 10 maiores proj/ativ e valor por sub
+* Uma tablea por sub com a distribuição dos maiores gastos por órgão
+```{r}
+#Primeira tabela
+gasto_reg<- rbind(df_2022, df_2023, df_2024, df_2025) %>% 
+  group_by(subprefeitura, descricao_proj_ativ) %>% 
+  summarise(valor = sum(valor_detalhamento_acao))
+# Fazendo tabela para anexo
+tabela_gasto_sub<- gasto_reg %>% 
+  group_by(subprefeitura) %>% 
+  slice_max(order_by = valor, n = 10)
+```
+
+```{r}
+# Segunda tabela
+gasto_orgao_reg <- rbind(df_2022, df_2023, df_2024, df_2025) %>% 
+  group_by(subprefeitura, sigla_orgao) %>% 
+  summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") %>% 
+  group_by(subprefeitura) %>% 
+  mutate(
+    total_subpref = sum(valor),
+    percentual = ((valor / total_subpref)*100),
+    percentual = paste0(round(percentual, 2)),
+    percentual = as.numeric(percentual)
+  )
+# Fazendo tabela para gráfico no anexo
+graf_orgao_sub<- gasto_orgao_reg %>% 
+  mutate(sigla_orgao = if_else(percentual < 4, "Outros", sigla_orgao)) %>% 
+  group_by(subprefeitura, sigla_orgao) %>% 
+  summarise(valor = sum(valor), .groups = "drop") %>%
+  group_by(subprefeitura) %>% 
+  mutate(
+    total_subpref = sum(valor),
+    percentual = (valor / total_subpref) * 100,
+    percentual = round(percentual, 2)
+  )
+
+
+```
+
 
 ## Exportação de mapas e gráficos
 
