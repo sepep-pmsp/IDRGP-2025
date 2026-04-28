@@ -214,15 +214,56 @@ Aqui se busca verificar o quanto se avançou na regionalização no quadriênio,
 ```{r}
 #criando arquivos paa cada execução orçamentária anual (loa) e para o conjunto dos anos (PPA)
 loa22 <- read_excel(arquivo_2022) %>% 
-  select(-DATA_EXTRAÇÃO)
-loa23 <- read_excel(arquivo_2023)
-loa24 <- read_excel(arquivo_2024)
-loa25 <- read_excel(arquivo_2025)
+  select(-DATA_LIQUIDAÇÃO, -DATA_EXTRAÇÃO)
+loa23 <- read_excel(arquivo_2023) %>% 
+  select(-DATA_LIQUIDAÇÃO)
+loa24 <- read_excel(arquivo_2024) %>% 
+  select(-DATA_LIQUIDAÇÃO)
+loa25 <- read_excel(arquivo_2025) %>% 
+  select(-DATA_LIQUIDAÇÃO)
 orcamento_ppa <- rbind(loa22, loa23, loa24, loa25)
 
-
+#anlisar por ação e ano a regionalização
+acao_reg<- orcamento_ppa %>% 
+  group_by(CÓDIGO_PROJ_ATIV, DESCRIÇÃO_PROJ_ATIV, ANO_EMPENHO, TIPO_REGIONALIZAÇÃO) %>% 
+  summarise(valor = sum(VALOR_DETALHAMENTO_AÇÃO, na.rm = T))
+analise_acao_reg <- acao_reg %>%
+  group_by(CÓDIGO_PROJ_ATIV, ANO_EMPENHO) %>%
+  filter(n_distinct(TIPO_REGIONALIZAÇÃO) == 2) %>%
+  mutate(total = sum(valor, na.rm = TRUE)) %>%
+  mutate(percentual = round(valor / total, 2)) %>% 
+  ungroup()
+#verificanco as inconsistências de regionalização por proj/ativ ao longo dos anos
+analise_acao_reg<- analise_acao_reg %>% 
+  group_by(CÓDIGO_PROJ_ATIV, TIPO_REGIONALIZAÇÃO) %>%
+filter(n_distinct(percentual) > 1)
+#reumo (considera apenas variaçõea maiores de 5%)
+tabela_inconsistencias <- analise_acao_reg %>% 
+  mutate(variacao = round(max(percentual) - min(percentual), 2),
+  ) %>%
+  filter(variacao > 0.05) 
+print(tabela_inconsistencias)
 ```
 
+A despeito de haver muitos casos NA em 2024, a tabela mostra que não há uma variação tão grande entre os casos regionalizados e não regionalizados na maioria das ações. Também não há tantas ações que se repetem com diferenças no perfil de regionalização ao longo dos anos. 
+
+Alguns destaques em relação a inconsistência (variação) podem ser: 
+
+### Sucesso de regionalização: 
+* *2096-Manutenção e Operação de Terminais de Ônibus* era pouco regionalizada em 2022, mas depois foi para 100%. 
+* *4113-Sistema Municipal de Regulação, Controle, Avaliação e Auditoria do SUS* não foi regionalizada em 2022, mas chegou a ser 100% regionalizada em 2025. Este é o caso de "inconsistência" (variação) que envolve maior montante de recursos.
+* Outros casos de ampliação da regionalização do dado ao longo dos anos: *2635-Serviço de Moradia Transitória* e *6669-Educação Ambiental*.
+* *7127-Estudos, Planos e Projetos Ambientais* é um caso que aumenta a regionalização, mas não chega a 100%.
+
+#### Casos de "desregionalização": 
+* *1055-Ampliação, Reforma e Requalificação das Instalações para a Guarda Civil Metropolitana* teva uma desregionalização em 2024. 
+* *4901-Manutenção e Operação dos Sistemas de Monitoramento e Alerta de Enchentes* também.
+* *5507-Projeto de Intervenção Urbana - PIU* ficou menos regionalizada de uma ano para o outro e tem a proporção 60x40.
+
+#### Casos bem dividido:
+* A ação *4910-Fomento à Cooperação, Parcerias e Captação de Investimentos Internacionais* tem uma proporção baixa de regionálizável, variando entre 12$ e 28% a depender do ano.
+* *4332-Manutenção da Ouvidoria de Direitos Humanos*
+* *7208-Parceria Público-Privada (PPP) - CEU*
 
 ## Função de limpeza unificada
 
