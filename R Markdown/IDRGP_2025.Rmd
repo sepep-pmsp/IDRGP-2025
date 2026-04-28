@@ -243,6 +243,11 @@ tabela_inconsistencias <- analise_acao_reg %>%
   ) %>%
   filter(variacao > 0.05) 
 print(tabela_inconsistencias)
+tabela_inconsistencias %>% 
+  filter(CÓDIGO_PROJ_ATIV == 4113 | CÓDIGO_PROJ_ATIV == 2096) %>% 
+  select(- DESCRIÇÃO_PROJ_ATIV, -variacao)
+
+  group_by(CÓDIGO_PROJ_ATIV) %>% summarise(sum(valor))
 ```
 
 A despeito de haver muitos casos NA em 2024, a tabela mostra que não há uma variação tão grande entre os casos regionalizados e não regionalizados na maioria das ações. Também não há tantas ações que se repetem com diferenças no perfil de regionalização ao longo dos anos. 
