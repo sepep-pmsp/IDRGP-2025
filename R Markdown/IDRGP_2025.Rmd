@@ -28,7 +28,6 @@ Este documento consolida a análise do ciclo PPA **2022–2025**, considerando *
 
 **Referência:** <https://prefeitura.sp.gov.br/web/planejamento/w/execucao_orcamentaria>
 
-
 ## Bibliotecas
 
 ```{r bibliotecas, message=FALSE, warning=FALSE}
@@ -101,8 +100,14 @@ As bases orçamentárias são arquivos locais de dados coletados até 30/04/2026
 pasta_dados <- "dados"
 pasta_dados <- normalizePath(pasta_dados, winslash = "/", mustWork = FALSE)
 
-if (!dir.exists(pasta_dados)) {
-  stop("Pasta `pasta_dados` não existe: ", pasta_dados)
+cat("📁 Pasta de dados:", pasta_dados, "\n")
+
+achar_arquivo <- function(candidatos, pasta) {
+  for (nm in candidatos) {
+    p <- file.path(pasta, nm)
+    if (file.exists(p)) return(p)
+  }
+  return(NA_character_)
 }
 
 # Bases orçamentárias (arquivos locais)
@@ -145,7 +150,7 @@ if (length(aux_faltando) > 0) {
 
 # AOE ou IDRGP Alvo
 
-O Índice de Alocação Orçamentária Esperada - AOE ou IDRGP Alvo é o índice de referência que indica qual proporção dos gastos públicos deveria ser destinada a cada subprefeitura. Nesta análise utilizaremos a atualização da cesta de indicadores calculada em 2025 e nomeada como Índice de Vulnerabilidade Urbana (IVU) pela SEPLAN/CPMA. Esta é a mesma base utilizada no relatório do IDRGP 2024.
+O AOE (ou **IDRGP Alvo**) é o índice de referência que indica qual proporção dos gastos públicos deveria ser destinada a cada subprefeitura. Nesta análise utilizamos o **IVU (2025)**.
 
 ## Importação do IVU
 
@@ -174,7 +179,8 @@ df_idrgp <- readxl::read_excel(arquivo_ivu) |>
 ```
 
 ## Controles de qualidade
-## suprimir 
+
+## suprimir
 
 ```{r controle_idrgp}
 # A soma do IDRGP Alvo deve ser igual a 1 (100%)
@@ -183,7 +189,7 @@ soma_idrgp <- sum(df_idrgp$idrgp_alvo, na.rm = TRUE)
 if (abs(soma_idrgp - 1) > 0.001) {
   warning("ATENÇÃO: o IDRGP Alvo não soma 1 (soma = ", round(soma_idrgp, 6), ").")
 } else {
-  cat("✅ IDRGP Alvo verificado: soma =", round(soma_idrgp, 6), "\n")
+  cat("IDRGP Alvo verificado: soma =", round(soma_idrgp, 6), "\n")
 }
 
 cat("Subprefeituras no IDRGP:", nrow(df_idrgp), "(esperado: 32)\n")
@@ -209,12 +215,63 @@ Nesta seção, as bases orçamentárias dos **4 anos** do ciclo PPA são importa
 
 ## Análise preliminar das ações orçamentárias regionalizadas
 
-Aqui se busca verificar o quanto se avançou na regionalização no quadriênio, bem como em qual proporção temos a regionalização de cada ação orçamentária
+Aqui se busca verificar o quanto se avançou na regionalização no quadriênio, bem como em qual proporção temos a regionalização de cada ação orçamentária.
 
 ```{r}
 orcamento_ppa<- 
 ```
 
+```{r funcoes_orcamento}
+detectar_sheet <- function(arquivo, ano) {
+  sheets <- readxl::excel_sheets(arquivo)
+  match <- stringr::str_detect(sheets, as.character(ano))
+  if (any(match)) sheets[which(match)[1]] else sheets[1]
+}
+
+padronizar_subprefeitura <- function(x) {
+  x <- as.character(x)
+  x <- str_replace_all(x, "^Subprefeitura de ", "")
+  x <- str_replace_all(x, "^Subprefeitura ", "")
+  x <- case_when(
+    x %in% c("Supra Centro", "Supra Subprefeitura Centro") ~ "Sé",
+    TRUE ~ x
+  )
+  str_squish(x)
+}
+
+coluna_valor_orc <- function(df) {
+  intersect(
+    names(df),
+    c("valor_detalhamento_acao", "valor_detalhamento_a_cao")
+  )[1]
+}
+
+resumo_regionalizacao <- function(arquivo, ano, sheet = 1) {
+  df_raw <- read_excel(arquivo, sheet = sheet) |> clean_names()
+
+  col_valor <- coluna_valor_orc(df_raw)
+  if (is.na(col_valor)) stop("Coluna de valor não encontrada em ", arquivo)
+
+  df <- df_raw |>
+    mutate(
+      subprefeitura = padronizar_subprefeitura(subprefeitura),
+      valor_detalhamento_acao = as.numeric(.data[[col_valor]]),
+      regionalizado = !is.na(subprefeitura) & subprefeitura != "" & !str_detect(subprefeitura, "Supra")
+    ) |>
+    group_by(descricao_proj_ativ) |>
+    summarise(
+      ano = as.integer(ano),
+      valor_total = sum(valor_detalhamento_acao, na.rm = TRUE),
+      valor_regionalizado = sum(if_else(regionalizado, valor_detalhamento_acao, 0), na.rm = TRUE),
+      perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_),
+      n_subpref = n_distinct(subprefeitura[regionalizado]),
+      .groups = "drop"
+    )
+
+  df
+}
+
+```
 
 ## Função de limpeza unificada
 
@@ -279,67 +336,59 @@ limpar_orcamento <- function(arquivo, ano, sheet = 1) {
 ## Processamento dos 4 anos
 
 ```{r processamento, message=FALSE, warning=FALSE}
-
-# Detecta a aba correta para cada arquivo
-detectar_sheet <- function(arquivo, ano) {
-  sheets <- readxl::excel_sheets(arquivo)
-  match <- stringr::str_detect(sheets, as.character(ano))
-  if (any(match)) sheets[which(match)[1]] else sheets[1]
-}
-
-agregar_por_subpref <- function(df) {
-  df |>
-    dplyr::group_by(subprefeitura) |>
-    dplyr::summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop")
-}
-
 anos <- 2022:2025
 arquivos <- c(arquivo_2022, arquivo_2023, arquivo_2024, arquivo_2025)
 names(arquivos) <- as.character(anos)
 
-# Checa arquivos antes (erro rápido e claro)
-faltando <- arquivos[!file.exists(arquivos)]
-if (length(faltando) > 0) {
-  stop("Arquivos não encontrados:\n- ", paste(faltando, collapse = "\n- "))
-}
-
-# Processa tudo
 dfs <- purrr::imap(arquivos, function(arq, ano_chr) {
   ano <- as.integer(ano_chr)
   aba <- detectar_sheet(arq, ano)
   limpar_orcamento(arq, ano, aba)
 })
 
-# Gera agregados
 agrs <- purrr::map(dfs, agregar_por_subpref)
 
-# (Opcional, mas útil) expõe no ambiente como df_2022... e df_agr_2022...
-list2env(setNames(dfs,  paste0("df_", anos)), envir = .GlobalEnv)
+list2env(setNames(dfs,  paste0("df_", anos)),  envir = .GlobalEnv)
 list2env(setNames(agrs, paste0("df_agr_", anos)), envir = .GlobalEnv)
 
-# Revisão automática no final do chunk
-resumo_anos <- tibble::tibble(
+resumo_anos <- tibble(
   ano = anos,
   n_linhas = purrr::map_int(dfs, nrow),
-  n_subpref = purrr::map_int(agrs, ~ dplyr::n_distinct(.x$subprefeitura)),
+  n_subpref = purrr::map_int(agrs, ~ n_distinct(.x$subprefeitura)),
   valor_total = purrr::map_dbl(agrs, ~ sum(.x$valor, na.rm = TRUE))
 )
 
 knitr::kable(
   resumo_anos |>
-    dplyr::mutate(valor_total = scales::label_number(
+    mutate(valor_total = scales::label_number(
       big.mark = ".", decimal.mark = ",", prefix = "R$ "
     )(valor_total)),
   col.names = c("Ano", "Linhas", "Subprefeituras", "Valor Total"),
   caption = "Resumo das bases orçamentárias processadas"
 )
-
 ```
 
+## Base cartográfica (uma vez só)
+
+Carregamos o shapefile das subprefeituras **uma vez** e reaproveitamos em todos os anos.
+
+```{r base_cartografica, message=FALSE, warning=FALSE}
+subprefeitura_sf <- read_sf(arquivo_shp) |>
+  clean_names() |>
+  st_make_valid() |>
+  rename(sigla = sg_subpref) |>
+  left_join(df_siglas, by = "sigla") |>
+  mutate(
+    subprefeitura = coalesce(subprefeitura, nm_subpref),
+    subprefeitura = str_squish(as.character(subprefeitura)),
+    join_key      = norm_name(subprefeitura)
+  ) |>
+  select(sigla, subprefeitura, join_key, geometry)
+```
 
 # Testes Estatísticos
 
-**Metodologia:** O teste de **Kolmogorov-Smirnov** verifica a normalidade das diferenças pareadas. Conforme o resultado, se maior de 0,05, opta-se pelo **teste t pareado** (paramétrico) ou, se menor de 0,05, **Wilcoxon** (não paramétrico). 
+**Metodologia:** O teste de **Kolmogorov-Smirnov** verifica a normalidade das diferenças pareadas. Conforme o resultado, se maior de 0,05, opta-se pelo **teste t pareado** (paramétrico) ou, se menor de 0,05, **Wilcoxon** (não paramétrico).
 
 Com o teste que analisa a distância entre as distribuições realizado, utiliza-se o intervalo de confiança (95%) para classificar cada subprefeitura em Acima, Abaixo ou Dentro da Alocação Esperada (ou do IDRGP Alvo).
 
@@ -513,7 +562,8 @@ df_ciclo_sf <- subprefeitura_sf |>
 
 cat("✅ Consolidação histórica concluída.\n")
 ```
-****Incluir Teste estatístico no chunk acima****
+
+\*\*\*\*Incluir Teste estatístico no chunk acima\*\*\*\*
 
 # Mapas
 
@@ -640,7 +690,7 @@ grafico2 <- ggplot(df_ciclo, aes(y = reorder(subprefeitura, idrgp_alvo))) +
 print(grafico2)
 ```
 
-## G3 — IDRGP 2025: Valores Absolutos (R$)
+## G3 — IDRGP 2025: Valores Absolutos (R\$)
 
 ```{r grafico3, fig.width=14, fig.height=12}
 grafico3 <- ggplot(df_integrado, aes(y = reorder(subprefeitura, idrgp_alvo))) +
@@ -662,7 +712,7 @@ grafico3 <- ggplot(df_integrado, aes(y = reorder(subprefeitura, idrgp_alvo))) +
 print(grafico3)
 ```
 
-## G4 — IDRGP 2022–2025: Série Histórica (R$)
+## G4 — IDRGP 2022–2025: Série Histórica (R\$)
 
 ```{r grafico4, fig.width=14, fig.height=12}
 df_longo_plot <- df_longo |>
@@ -701,8 +751,7 @@ cat("✅ 4 gráficos gerados.\n")
 
 ## Tabela de anexos (2025)
 
-Detalhamento do valor liquidado por **projeto/atividade** em cada
-subprefeitura — apenas para o ano de **2025**.
+Detalhamento do valor liquidado por **projeto/atividade** em cada subprefeitura — apenas para o ano de **2025**.
 
 ```{r anexos}
 df_anexo <- df_2025 |>
@@ -716,8 +765,10 @@ cat("Valor total:", format(sum(df_anexo$valor_liquidado), big.mark = ".", decima
 ```
 
 ## Tabelas para 2022-2025
-* Uma tabela para os 10 maiores proj/ativ e valor por sub
-* Uma tablea por sub com a distribuição dos maiores gastos por órgão
+
+- Uma tabela para os 10 maiores proj/ativ e valor por sub
+- Uma tablea por sub com a distribuição dos maiores gastos por órgão
+
 ```{r}
 #Primeira tabela
 gasto_reg<- rbind(df_2022, df_2023, df_2024, df_2025) %>% 
@@ -755,7 +806,6 @@ graf_orgao_sub<- gasto_orgao_reg %>%
 
 
 ```
-
 
 ## Exportação de mapas e gráficos
 
