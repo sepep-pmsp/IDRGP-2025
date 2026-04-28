@@ -222,6 +222,7 @@ loa24 <- read_excel(arquivo_2024) %>%
 loa25 <- read_excel(arquivo_2025) %>% 
   select(-DATA_LIQUIDAÇÃO)
 orcamento_ppa <- rbind(loa22, loa23, loa24, loa25)
+rm(loa22, loa23, loa24, loa25)
 
 #anlisar por ação e ano a regionalização
 acao_reg<- orcamento_ppa %>% 
@@ -229,16 +230,27 @@ acao_reg<- orcamento_ppa %>%
   summarise(valor = sum(VALOR_DETALHAMENTO_AÇÃO, na.rm = T))
 analise_acao_reg <- acao_reg %>%
   group_by(CÓDIGO_PROJ_ATIV, ANO_EMPENHO) %>%
-  filter(n_distinct(TIPO_REGIONALIZAÇÃO) == 2) %>%
-  mutate(total = sum(valor, na.rm = TRUE)) %>%
-  mutate(percentual = round(valor / total, 2)) %>% 
-  ungroup()
-#verificanco as inconsistências de regionalização por proj/ativ ao longo dos anos
-analise_acao_reg<- analise_acao_reg %>% 
+  mutate(TIPO_REGIONALIZAÇÃO = trimws(TIPO_REGIONALIZAÇÃO),
+         total = sum(valor, na.rm = TRUE),
+         percentual = round(valor / total, 2))
+
+mudancas <- analise_acao_reg %>%
+  slice_max(percentual, n = 1, with_ties = FALSE) %>%
+  arrange(CÓDIGO_PROJ_ATIV, ANO_EMPENHO) %>%
+  group_by(CÓDIGO_PROJ_ATIV) %>%
+  mutate(total_quad = sum(total),
+         mudou = TIPO_REGIONALIZAÇÃO != lag(TIPO_REGIONALIZAÇÃO)) %>%
+  filter(any(mudou, na.rm = TRUE)) %>%
+  arrange(desc(total_quad), CÓDIGO_PROJ_ATIV, ANO_EMPENHO) %>% 
+  group_by(CÓDIGO_PROJ_ATIV)
+print(mudancas)
+
+#verificanco as inconsistências de regionalização por proj/ativ no anos
+tabela_inconsistencias <- analise_acao_reg %>% 
   group_by(CÓDIGO_PROJ_ATIV, TIPO_REGIONALIZAÇÃO) %>%
 filter(n_distinct(percentual) > 1)
-#reumo (considera apenas variaçõea maiores de 5%)
-tabela_inconsistencias <- analise_acao_reg %>% 
+#resumo (considera apenas variaçõea maiores de 5%)
+tabela_inconsistencias <- tabela_inconsistencias %>% 
   mutate(variacao = round(max(percentual) - min(percentual), 2),
   ) %>%
   filter(variacao > 0.05) 
@@ -247,17 +259,20 @@ tabela_inconsistencias %>%
   filter(CÓDIGO_PROJ_ATIV == 4113 | CÓDIGO_PROJ_ATIV == 2096) %>% 
   select(- DESCRIÇÃO_PROJ_ATIV, -variacao)
 
-  group_by(CÓDIGO_PROJ_ATIV) %>% summarise(sum(valor))
+
 ```
 
-A despeito de haver muitos casos NA em 2024, a tabela mostra que não há uma variação tão grande entre os casos regionalizados e não regionalizados na maioria das ações. Também não há tantas ações que se repetem com diferenças no perfil de regionalização ao longo dos anos. 
+A despeito de haver muitos casos NA em 2024, a tabela mostra que não há uma variação tão grande entre os casos regionalizados e não regionalizados na maioria das ações.  
 
 Alguns destaques em relação a inconsistência (variação) podem ser: 
 
 ### Sucesso de regionalização: 
+* *4701-Compensações Tarifárias do Sistema de Ônibus*, passa a ser regionalizada em 2024. Este é o caso de "inconsistência" (variação) que envolve maior montante de recursos.
+* *4113-Sistema Municipal de Regulação, Controle, Avaliação e Auditoria do SUS* não foi regionalizada em 2022, mas avançou ***paulatinamente*** até ser 100% regionalizada em 2025. 
+* *6553-Alimentação Escolar*, foi regionalizada só em 2025.
+* As três anteriore, são os proj/ativ com mais recursos liquidados, depois vem *6007-Serviços de Limpeza Urbana - Varrição e Lavagem de Áreas Públicas* e *6010-Concessão dos Serviços Divisíveis de Limpeza Urbana em Regime Público*, que  passaram a ser totalmente regionalizadas a partir de 2023.
 * *2096-Manutenção e Operação de Terminais de Ônibus* era pouco regionalizada em 2022, mas depois foi para 100%. 
-* *4113-Sistema Municipal de Regulação, Controle, Avaliação e Auditoria do SUS* não foi regionalizada em 2022, mas chegou a ser 100% regionalizada em 2025. Este é o caso de "inconsistência" (variação) que envolve maior montante de recursos.
-* Outros casos de ampliação da regionalização do dado ao longo dos anos: *2635-Serviço de Moradia Transitória* e *6669-Educação Ambiental*.
+* Outros casos de ampliação da regionalização do dado ao longo dos anos: *2512-Manutenção e Operação de Serviço de Atendimento Médico de Urgência (SAMU)*, *2635-Serviço de Moradia Transitória* e *6669-Educação Ambiental*.
 * *7127-Estudos, Planos e Projetos Ambientais* é um caso que aumenta a regionalização, mas não chega a 100%.
 
 #### Casos de "desregionalização": 
