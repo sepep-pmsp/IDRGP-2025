@@ -370,7 +370,7 @@ knitr::kable(
 
 ## Base cartográfica (uma vez só)
 
-Carregamos o shapefile das subprefeituras **uma vez** e reaproveitamos em todos os anos.
+Carregamos o shapefile das subprefeituras baixado do GeoSampa **uma vez** e reaproveitamos em todos os anos.
 
 ```{r base_cartografica, message=FALSE, warning=FALSE}
 subprefeitura_sf <- read_sf(arquivo_shp) |>
@@ -384,6 +384,174 @@ subprefeitura_sf <- read_sf(arquivo_shp) |>
     join_key      = norm_name(subprefeitura)
   ) |>
   select(sigla, subprefeitura, join_key, geometry)
+```
+
+# Análises por ano (2022–2025)
+
+Nesta seção, para **cada ano** nós geramos:
+
+1)  **Regionalização por ação (projeto/atividade)**\
+2)  **IDRGP Real vs IDRGP Alvo** (teste KS + t pareado/Wilcoxon + classificação por IC 95%)
+
+## Funções (IDRGP por ano)
+
+```{r funcoes_idrgp_por_ano}
+#O objetivo aqui é entender se o gasto real é estatisticamente diferente do gasto esperado
+testar_idrgp <- function(df_base) {
+  df_teste <- df_base |>
+    st_drop_geometry() |>
+    select(subprefeitura, valor, idrgp_alvo, idrgp_real, idrgp_diferenca, idrgp_var_percentual) |>
+    filter(!is.na(idrgp_diferenca))
+  
+#testar normalidade para entender se a distribuição segue a normal  
+  vetor_dif_z <- scale(df_teste$idrgp_diferenca)[, 1]
+  teste_ks <- ks.test(vetor_dif_z, "pnorm")
+
+  if (teste_ks$p.value <= 0.05) {
+    metodo <- "wilcoxon"
+    teste_principal <- wilcox.test(
+      df_teste$idrgp_real, df_teste$idrgp_alvo,
+      paired = TRUE, conf.int = TRUE, conf.level = 0.95, exact = FALSE
+    )
+    medida_central <- median(df_teste$idrgp_diferenca, na.rm = TRUE)
+  } else {
+    metodo <- "t_pareado"
+    teste_principal <- t.test(
+      df_teste$idrgp_real, df_teste$idrgp_alvo,
+      paired = TRUE, conf.level = 0.95
+    )
+    medida_central <- unname(teste_principal$estimate)
+  }
+
+  ic_inf <- teste_principal$conf.int[1]
+  ic_sup <- teste_principal$conf.int[2]
+# Adotou-se uma regra empírica de ±30% como critério operacional de variação relevante, complementarmente validada por testes estatísticos de hipótese.
+  df_teste <- df_teste |>
+    mutate(
+      status_var_percentual = case_when(
+        idrgp_var_percentual >  0.3  ~ "Acima do IDRGP Alvo",
+        idrgp_var_percentual < -0.3  ~ "Abaixo do IDRGP Alvo",
+        TRUE                         ~ "Dentro do IDRGP Alvo"
+      ),
+      status_estatistico = case_when(
+        idrgp_diferenca < ic_inf ~ "Abaixo do IDRGP Alvo",
+        idrgp_diferenca > ic_sup ~ "Acima do IDRGP Alvo",
+        TRUE                     ~ "Dentro do IDRGP Alvo"
+      )
+    )
+
+  list(
+    df_teste = df_teste,
+    teste_ks = teste_ks,
+    teste_principal = teste_principal,
+    metodo = metodo,
+    medida_central = medida_central,
+    ic_inf = ic_inf,
+    ic_sup = ic_sup
+  )
+}
+
+integrar_idrgp_ano <- function(df_agr_ano, ano_ref, subprefeitura_sf, df_idrgp) {
+  df_agr_k <- df_agr_ano |>
+    mutate(
+      subprefeitura = str_squish(subprefeitura),
+      join_key = norm_name(subprefeitura) 
+    )
+
+  df_integrado <- subprefeitura_sf |>
+    left_join(df_idrgp |> select(join_key, idrgp_alvo), by = "join_key") |>
+    left_join(df_agr_k  |> select(join_key, valor),     by = "join_key") |>
+    mutate(
+      valor = replace_na(valor, 0),
+      idrgp_alvo = replace_na(idrgp_alvo, 0)
+    )
+
+  total_valor <- sum(df_integrado$valor, na.rm = TRUE)
+
+  df_integrado <- df_integrado |>
+    mutate(
+      ano = as.integer(ano_ref),
+      idrgp_real      = if (total_valor > 0) valor / total_valor else NA_real_,
+      idrgp_diferenca = idrgp_real - idrgp_alvo,
+      idrgp_var_percentual = if_else(idrgp_alvo == 0, 0, idrgp_diferenca / idrgp_alvo),
+      valor_previsto  = total_valor * idrgp_alvo,
+      status_valor    = if_else(valor < valor_previsto,
+                                "Valor previsto (R$) não atingido",
+                                "Valor previsto (R$) superado")
+    )
+
+  testes <- testar_idrgp(df_integrado)
+
+  df_integrado <- df_integrado |>
+    left_join(
+      testes$df_teste |> select(subprefeitura, status_var_percentual, status_estatistico),
+      by = "subprefeitura"
+    )
+
+  list(
+    ano = as.integer(ano_ref),
+    df_integrado = df_integrado,
+    df_teste = testes$df_teste,
+    total_valor = total_valor,
+    teste_ks = testes$teste_ks,
+    teste_principal = testes$teste_principal,
+    metodo = testes$metodo,
+    medida_central = testes$medida_central,
+    ic_inf = testes$ic_inf,
+    ic_sup = testes$ic_sup
+  )
+}
+
+#pipeline completo (dados → integração → indicador → teste → classificação)
+```
+
+## Preparação (gera tudo em listas)
+
+Este chunk faz o “trabalho pesado” uma única vez e guarda tudo em listas fáceis de usar.
+
+```{r prepara_listas, message=FALSE, warning=FALSE}
+# 1) Regionalização por ação, por ano
+df_reg <- purrr::imap_dfr(arquivos, function(arq, ano_chr) {
+  ano <- as.integer(ano_chr)
+  aba <- detectar_sheet(arq, ano)
+  resumo_regionalizacao(arq, ano, aba)
+})
+
+reg_por_ano <- split(df_reg, df_reg$ano)
+
+# 2) IDRGP por ano (teste + classificação)
+idrgp_por_ano <- purrr::imap(agrs, function(df_agr_ano, ano_chr) {
+  integrar_idrgp_ano(df_agr_ano, as.integer(ano_chr), subprefeitura_sf, df_idrgp)
+})
+
+# (Opcional) expõe variáveis “amigáveis” no ambiente: idrgp_2022, idrgp_2023
+purrr::iwalk(idrgp_por_ano, function(res, ano_chr) {
+  assign(paste0("idrgp_", ano_chr), res, envir = .GlobalEnv)
+})
+```
+
+## Resumo geral da regionalização (por ano)
+
+```{r resumo_regionalizacao_ano, message=FALSE, warning=FALSE}
+resumo_reg_ano <- df_reg |>
+  group_by(ano) |>
+  summarise(
+    valor_total = sum(valor_total, na.rm = TRUE),
+    valor_regionalizado = sum(valor_regionalizado, na.rm = TRUE),
+    perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  resumo_reg_ano |>
+    mutate(
+      valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+      valor_regionalizado = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_regionalizado),
+      perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
+    ),
+  col.names = c("Ano","Valor total","Valor regionalizado","% regionalizado"),
+  caption = "Regionalização do orçamento (por valor) — resumo por ano"
+)
 ```
 
 # Testes Estatísticos
