@@ -39,6 +39,7 @@ library(scales)      # formatação de eixos em gráficos
 library(writexl)     # exportação para Excel
 library(sf)          # dados geoespaciais e mapas
 library(ggplot2)     # gráficos
+library(knitr)       # exibir tabelas
 ```
 
 ## Funções auxiliares
@@ -244,6 +245,28 @@ mudancas <- analise_acao_reg %>%
   arrange(desc(total_quad), CÓDIGO_PROJ_ATIV, ANO_EMPENHO) %>% 
   group_by(CÓDIGO_PROJ_ATIV)
 print(mudancas)
+
+#Relação de mudanças com o total de projetos atividades e proj/ativ reionalizados
+n_proj_ativ <- orcamento_ppa %>%  
+  summarise(n_p_a = n_distinct(CÓDIGO_PROJ_ATIV))
+n_p_a_regionalizado <- orcamento_ppa %>% 
+  filter(TIPO_REGIONALIZAÇÃO == "Despesa Regionalizável") %>% 
+  summarise(n_pa_reg = n_distinct(CÓDIGO_PROJ_ATIV))
+n_variacao <- mudancas %>% 
+  ungroup() %>%
+  filter(mudou == TRUE) %>%
+  distinct(CÓDIGO_PROJ_ATIV) %>%
+  summarise(n_mudancas = n())
+tabela_resumo <- tibble(
+  Indicador = c(
+    "Total de Projetos/Atividades",
+    "Projetos/Atividades Regionalizáveis",
+    "Projetos/Atividades com Mudança"),
+  Valor = c(
+    n_proj_ativ$n_p_a,
+    n_p_a_regionalizado$n_pa_reg,
+    n_variacao$n_mudancas))
+kable(tabela_resumo, caption = "Resumo dos Projetos/Atividades")
 
 #verificanco as inconsistências de regionalização por proj/ativ no anos
 tabela_inconsistencias <- analise_acao_reg %>% 
