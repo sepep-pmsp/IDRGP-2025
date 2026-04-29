@@ -368,6 +368,37 @@ knitr::kable(
 )
 ```
 
+# teste de adaptação dos 4 anos mas com o contraste entre os documentos e sua relação com a base anual que #se desenvolve na relação de uma para uma. A diferença maior aqui e que o desenvolvimento também pode sr #visto por ano 
+
+```{r processamento, message=FALSE, warning=FALSE}
+# Detecta a aba correta para cada arquivo
+detectar_sheet <- function(arquivo, ano) {
+  sheets <- excel_sheets(arquivo)
+  # Tenta encontrar aba com o ano no nome
+  match <- str_detect(sheets, as.character(ano))
+  if (any(match)) return(sheets[which(match)[1]])
+  return(sheets[1])
+}
+
+# Processa cada ano
+df_2022 <- limpar_orcamento(arquivo_2022, 2022, detectar_sheet(arquivo_2022, 2022))
+df_2023 <- limpar_orcamento(arquivo_2023, 2023, detectar_sheet(arquivo_2023, 2023))
+df_2024 <- limpar_orcamento(arquivo_2024, 2024, detectar_sheet(arquivo_2024, 2024))
+df_2025 <- limpar_orcamento(arquivo_2025, 2025, detectar_sheet(arquivo_2025, 2025))
+
+# Agrega por subprefeitura e ano
+agregar_por_subpref <- function(df) {
+  df |>
+    group_by(subprefeitura) |>
+    summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop")
+}
+
+df_agr_2022 <- agregar_por_subpref(df_2022)
+df_agr_2023 <- agregar_por_subpref(df_2023)
+df_agr_2024 <- agregar_por_subpref(df_2024)
+df_agr_2025 <- agregar_por_subpref(df_2025)
+```
+
 ## Base cartográfica (uma vez só)
 
 Carregamos o shapefile das subprefeituras baixado do GeoSampa **uma vez** e reaproveitamos em todos os anos.
@@ -390,20 +421,18 @@ subprefeitura_sf <- read_sf(arquivo_shp) |>
 
 Nesta seção, para **cada ano** nós geramos:
 
-1)  **Regionalização por ação (projeto/atividade)**\
-2)  **IDRGP Real vs IDRGP Alvo** (teste KS + t pareado/Wilcoxon + classificação por IC 95%)
+1) **Regionalização por ação (projeto/atividade)**  
+2) **IDRGP Real vs IDRGP Alvo** (teste KS + t pareado/Wilcoxon + classificação por IC 95%)
 
 ## Funções (IDRGP por ano)
 
 ```{r funcoes_idrgp_por_ano}
-#O objetivo aqui é entender se o gasto real é estatisticamente diferente do gasto esperado
 testar_idrgp <- function(df_base) {
   df_teste <- df_base |>
     st_drop_geometry() |>
     select(subprefeitura, valor, idrgp_alvo, idrgp_real, idrgp_diferenca, idrgp_var_percentual) |>
     filter(!is.na(idrgp_diferenca))
-  
-#testar normalidade para entender se a distribuição segue a normal  
+
   vetor_dif_z <- scale(df_teste$idrgp_diferenca)[, 1]
   teste_ks <- ks.test(vetor_dif_z, "pnorm")
 
@@ -425,7 +454,7 @@ testar_idrgp <- function(df_base) {
 
   ic_inf <- teste_principal$conf.int[1]
   ic_sup <- teste_principal$conf.int[2]
-# Adotou-se uma regra empírica de ±30% como critério operacional de variação relevante, complementarmente validada por testes estatísticos de hipótese.
+
   df_teste <- df_teste |>
     mutate(
       status_var_percentual = case_when(
@@ -455,7 +484,7 @@ integrar_idrgp_ano <- function(df_agr_ano, ano_ref, subprefeitura_sf, df_idrgp) 
   df_agr_k <- df_agr_ano |>
     mutate(
       subprefeitura = str_squish(subprefeitura),
-      join_key = norm_name(subprefeitura) 
+      join_key = norm_name(subprefeitura)
     )
 
   df_integrado <- subprefeitura_sf |>
@@ -501,8 +530,282 @@ integrar_idrgp_ano <- function(df_agr_ano, ano_ref, subprefeitura_sf, df_idrgp) 
     ic_sup = testes$ic_sup
   )
 }
+```
 
-#pipeline completo (dados → integração → indicador → teste → classificação)
+## Preparação (gera tudo em listas)
+
+Este chunk faz o “trabalho pesado” uma única vez e guarda tudo em listas fáceis de usar.
+
+```{r prepara_listas, message=FALSE, warning=FALSE}
+# 1) Regionalização por ação, por ano
+df_reg <- purrr::imap_dfr(arquivos, function(arq, ano_chr) {
+  ano <- as.integer(ano_chr)
+  aba <- detectar_sheet(arq, ano)
+  resumo_regionalizacao(arq, ano, aba)
+})
+
+reg_por_ano <- split(df_reg, df_reg$ano)
+
+# 2) IDRGP por ano (teste + classificação)
+idrgp_por_ano <- purrr::imap(agrs, function(df_agr_ano, ano_chr) {
+  integrar_idrgp_ano(df_agr_ano, as.integer(ano_chr), subprefeitura_sf, df_idrgp)
+})
+
+# (Opcional) expõe variáveis “amigáveis” no ambiente: idrgp_2022, idrgp_2023...
+purrr::iwalk(idrgp_por_ano, function(res, ano_chr) {
+  assign(paste0("idrgp_", ano_chr), res, envir = .GlobalEnv)
+})
+```
+
+## Resumo geral da regionalização (por ano)
+
+```{r resumo_regionalizacao_ano, message=FALSE, warning=FALSE}
+resumo_reg_ano <- df_reg |>
+  group_by(ano) |>
+  summarise(
+    valor_total = sum(valor_total, na.rm = TRUE),
+    valor_regionalizado = sum(valor_regionalizado, na.rm = TRUE),
+    perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  resumo_reg_ano |>
+    mutate(
+      valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+      valor_regionalizado = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_regionalizado),
+      perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
+    ),
+  col.names = c("Ano","Valor total","Valor regionalizado","% regionalizado"),
+  caption = "Regionalização do orçamento (por valor) — resumo por ano"
+)
+```
+
+## Análises de 2022 a 2025 (mesmo roteiro em cada ano)
+
+Para ficar **didático e replicável**, usamos:
+
+1) **Regionalização por ação** (tabela completa exportada para Excel)  
+2) **Teste estatístico do IDRGP** (KS + método + IC 95%)  
+3) **Classificação das subprefeituras** (estatística e variação percentual)
+
+```{r funcao_imprimir_ano, message=FALSE, warning=FALSE}
+imprimir_analise_ano <- function(ano) {
+  ano_chr <- as.character(ano)
+
+  # --- Regionalização (todas as ações) ---
+  cat("### Ações regionalizadas (projeto/atividade)\n\n")
+  df_reg_ano <- reg_por_ano[[ano_chr]] |>
+    arrange(desc(valor_total))
+
+  write_xlsx(
+    df_reg_ano,
+    path = file.path(pasta_saida, paste0("regionalizacao_acoes_", ano, ".xlsx"))
+  )
+
+  cat(
+    "Tabela completa exportada em: `",
+    file.path(pasta_saida, paste0("regionalizacao_acoes_", ano, ".xlsx")),
+    "`\n\n",
+    sep = ""
+  )
+
+  resumo_ano <- df_reg_ano |>
+    summarise(
+      acoes = n(),
+      valor_total = sum(valor_total, na.rm = TRUE),
+      valor_regionalizado = sum(valor_regionalizado, na.rm = TRUE),
+      perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_)
+    )
+
+  knitr::kable(
+    resumo_ano |>
+      mutate(
+        valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+        valor_regionalizado = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_regionalizado),
+        perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
+      ),
+    col.names = c("N ações","Valor total","Valor regionalizado","% regionalizado"),
+    caption = paste0("Resumo da regionalização por ação — ", ano)
+  ) |> print()
+
+  top_nao_reg <- df_reg_ano |>
+    mutate(perc_nao_reg = 1 - perc_regionalizado) |>
+    filter(!is.na(perc_nao_reg)) |>
+    arrange(desc(perc_nao_reg), desc(valor_total)) |>
+    slice_head(n = 15) |>
+    mutate(
+      valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+      perc_nao_reg = label_percent(accuracy = 0.1)(perc_nao_reg)
+    ) |>
+    select(descricao_proj_ativ, valor_total, perc_nao_reg, n_subpref)
+
+  knitr::kable(
+    top_nao_reg,
+    col.names = c("Projeto/atividade","Valor total","% não regionalizado","N subpref (regionalizado)"),
+    caption = paste0("Top 15 ações com menor regionalização (por valor) — ", ano)
+  ) |> print()
+
+  # --- IDRGP + testes ---
+  cat("\n### IDRGP e testes estatísticos\n\n")
+  res <- idrgp_por_ano[[ano_chr]]
+
+  cat(
+    "- Total do ano: R$ ", format(res$total_valor, big.mark = ".", decimal.mark = ","), "\n",
+    "- KS (normalidade): D = ", round(res$teste_ks$statistic, 4),
+    " | p = ", formatC(res$teste_ks$p.value, format = "e", digits = 3), "\n",
+    "- Método: ", toupper(res$metodo),
+    " | p = ", formatC(res$teste_principal$p.value, format = "e", digits = 2), "\n",
+    "- IC 95% (diferença real - alvo): [", round(res$ic_inf, 6), "; ", round(res$ic_sup, 6), "]\n\n",
+    sep = ""
+  )
+
+  dist_status <- res$df_teste |>
+    count(status_estatistico) |>
+    arrange(match(status_estatistico, c("Abaixo do IDRGP Alvo","Dentro do IDRGP Alvo","Acima do IDRGP Alvo")))
+
+  knitr::kable(
+    dist_status,
+    col.names = c("Status (IC 95%)", "N subprefeituras"),
+    caption = paste0("Classificação estatística (IC 95%) — ", ano)
+  ) |> print()
+}
+```
+
+## Análise de 2022
+
+```{r analise_2022, results='asis', message=FALSE, warning=FALSE}
+imprimir_analise_ano(2022)
+```
+
+## Análise de 2023
+
+```{r analise_2023, results='asis', message=FALSE, warning=FALSE}
+imprimir_analise_ano(2023)
+```
+
+## Análise de 2024
+
+```{r analise_2024, results='asis', message=FALSE, warning=FALSE}
+imprimir_analise_ano(2024)
+```
+
+## Análise de 2025
+
+```{r analise_2025, results='asis', message=FALSE, warning=FALSE}
+imprimir_analise_ano(2025)
+```
+
+## Consolidação histórica (2022–2025) + teste do ciclo
+
+Aqui consolidamos o **ciclo inteiro** e também aplicamos o mesmo teste estatístico no **acumulado 2022–2025**.
+
+```{r historico}
+# Para manter o relatório “compatível” com os mapas/gráficos já montados,
+# definimos aqui os objetos do ano base (2025) a partir das listas.
+res_2025 <- idrgp_por_ano[["2025"]]
+df_integrado <- res_2025$df_integrado
+df_teste <- res_2025$df_teste
+teste_ks <- res_2025$teste_ks
+teste_principal <- res_2025$teste_principal
+metodo_estatistico <- res_2025$metodo
+medida_central <- res_2025$medida_central
+ic_inf <- res_2025$ic_inf
+ic_sup <- res_2025$ic_sup
+
+integrar_ano <- function(df_agr, ano_ref) {
+  df_agr |>
+    mutate(join_key = norm_name(subprefeitura)) |>
+    left_join(df_idrgp |> select(join_key, idrgp_alvo), by = "join_key") |>
+    mutate(
+      valor = replace_na(valor, 0),
+      idrgp_alvo = replace_na(idrgp_alvo, 0),
+      total = sum(valor, na.rm = TRUE),
+      idrgp_real = if_else(total > 0, valor / total, 0),
+      idrgp_diferenca = idrgp_real - idrgp_alvo,
+      idrgp_var_percentual = if_else(idrgp_alvo == 0, 0, idrgp_diferenca / idrgp_alvo),
+      status = case_when(
+        idrgp_var_percentual >  0.3  ~ "Acima do IDRGP Alvo",
+        idrgp_var_percentual < -0.3  ~ "Abaixo do IDRGP Alvo",
+        TRUE ~ "Dentro do IDRGP Alvo"
+      ),
+      ano = ano_ref
+    ) |>
+    select(-total)
+}
+
+int_2022 <- integrar_ano(df_agr_2022, 2022)
+int_2023 <- integrar_ano(df_agr_2023, 2023)
+int_2024 <- integrar_ano(df_agr_2024, 2024)
+int_2025 <- res_2025$df_integrado |>
+  st_drop_geometry() |>
+  select(subprefeitura, join_key, valor, idrgp_alvo, idrgp_real,
+         idrgp_diferenca, idrgp_var_percentual, status = status_estatistico) |>
+  mutate(ano = 2025)
+
+df_longo <- bind_rows(int_2022, int_2023, int_2024, int_2025) |>
+  mutate(ano = as.factor(ano))
+
+df_ciclo <- df_longo |>
+  group_by(subprefeitura) |>
+  summarise(
+    idrgp_alvo = first(idrgp_alvo),
+    valor_2022 = sum(valor[ano == "2022"], na.rm = TRUE),
+    valor_2023 = sum(valor[ano == "2023"], na.rm = TRUE),
+    valor_2024 = sum(valor[ano == "2024"], na.rm = TRUE),
+    valor_2025 = sum(valor[ano == "2025"], na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    valor_2022_a_2025 = valor_2022 + valor_2023 + valor_2024 + valor_2025,
+    idrgp_real_2022_a_2025 = valor_2022_a_2025 / sum(valor_2022_a_2025),
+    idrgp_diferenca_ciclo = idrgp_real_2022_a_2025 - idrgp_alvo,
+    idrgp_var_pct_ciclo = if_else(idrgp_alvo == 0, 0,
+      (idrgp_real_2022_a_2025 - idrgp_alvo) / idrgp_alvo),
+    status_ciclo = case_when(
+      idrgp_var_pct_ciclo >  0.3  ~ "Acima do IDRGP Alvo",
+      idrgp_var_pct_ciclo < -0.3  ~ "Abaixo do IDRGP Alvo",
+      TRUE ~ "Dentro do IDRGP Alvo"
+    )
+  )
+
+# === Teste estatístico no ciclo (pedido do Fernando) ===
+vetor_ciclo_z <- scale(df_ciclo$idrgp_diferenca_ciclo)[, 1]
+teste_ks_ciclo <- ks.test(vetor_ciclo_z, "pnorm")
+
+if (teste_ks_ciclo$p.value <= 0.05) {
+  metodo_estatistico_ciclo <- "wilcoxon"
+  teste_principal_ciclo <- wilcox.test(
+    df_ciclo$idrgp_real_2022_a_2025, df_ciclo$idrgp_alvo,
+    paired = TRUE, conf.int = TRUE, conf.level = 0.95, exact = FALSE
+  )
+} else {
+  metodo_estatistico_ciclo <- "t_pareado"
+  teste_principal_ciclo <- t.test(
+    df_ciclo$idrgp_real_2022_a_2025, df_ciclo$idrgp_alvo,
+    paired = TRUE, conf.level = 0.95
+  )
+}
+
+ic_inf_ciclo <- teste_principal_ciclo$conf.int[1]
+ic_sup_ciclo <- teste_principal_ciclo$conf.int[2]
+
+df_ciclo <- df_ciclo |>
+  mutate(
+    status_ciclo_estatistico = case_when(
+      idrgp_diferenca_ciclo < ic_inf_ciclo ~ "Abaixo do IDRGP Alvo",
+      idrgp_diferenca_ciclo > ic_sup_ciclo ~ "Acima do IDRGP Alvo",
+      TRUE ~ "Dentro do IDRGP Alvo"
+    )
+  )
+
+df_ciclo_sf <- subprefeitura_sf |>
+  left_join(df_ciclo |> mutate(join_key = norm_name(subprefeitura)), by = "join_key")
+
+cat("✅ Consolidação histórica concluída.\n")
+cat("✅ Teste do ciclo:", toupper(metodo_estatistico_ciclo),
+    "| KS p =", formatC(teste_ks_ciclo$p.value, format="e", digits=2),
+    "| IC 95% [", round(ic_inf_ciclo, 6), ";", round(ic_sup_ciclo, 6), "]\n")
 ```
 
 ## Preparação (gera tudo em listas)
@@ -554,184 +857,8 @@ knitr::kable(
 )
 ```
 
-# Testes Estatísticos
 
-**Metodologia:** O teste de **Kolmogorov-Smirnov** verifica a normalidade das diferenças pareadas. Conforme o resultado, se maior de 0,05, opta-se pelo **teste t pareado** (paramétrico) ou, se menor de 0,05, **Wilcoxon** (não paramétrico).
 
-Com o teste que analisa a distância entre as distribuições realizado, utiliza-se o intervalo de confiança (95%) para classificar cada subprefeitura em Acima, Abaixo ou Dentro da Alocação Esperada (ou do IDRGP Alvo).
-
-## Integração dos dados (2025)
-
-```{r integracao_2025}
-# Dados cartográficos
-subprefeitura_sf <- read_sf(arquivo_shp) |>
-  clean_names() |> st_make_valid() |>
-  rename(sigla = sg_subpref) |>
-  left_join(df_siglas, by = "sigla") |>
-  mutate(
-    subprefeitura = coalesce(subprefeitura, nm_subpref),
-    subprefeitura = str_squish(as.character(subprefeitura)),
-    join_key      = norm_name(subprefeitura)
-  ) |>
-  select(sigla, subprefeitura, join_key, geometry)
-
-# Prepara orçamento 2025
-df_agr_2025_k <- df_agr_2025 |>
-  mutate(subprefeitura = str_squish(subprefeitura),
-         join_key = norm_name(subprefeitura))
-
-# Integração
-df_integrado <- subprefeitura_sf |>
-  left_join(df_idrgp      |> select(join_key, idrgp_alvo), by = "join_key") |>
-  left_join(df_agr_2025_k |> select(join_key, valor),      by = "join_key") |>
-  mutate(valor = replace_na(valor, 0), idrgp_alvo = replace_na(idrgp_alvo, 0))
-
-total_valor <- sum(df_integrado$valor, na.rm = TRUE)
-
-df_integrado <- df_integrado |>
-  mutate(
-    idrgp_real      = if (total_valor > 0) valor / total_valor else NA_real_,
-    idrgp_diferenca = idrgp_real - idrgp_alvo,
-    idrgp_var_percentual = if_else(idrgp_alvo == 0, 0, idrgp_diferenca / idrgp_alvo),
-    valor_previsto  = total_valor * idrgp_alvo,
-    status_valor    = if_else(valor < valor_previsto,
-                              "Valor previsto (R$) não atingido",
-                              "Valor previsto (R$) superado")
-  )
-
-cat("✅ Integração 2025: R$", format(total_valor, big.mark = ".", decimal.mark = ","), "\n")
-```
-
-## Teste KS e seleção do método
-
-```{r teste_ks}
-df_teste <- df_integrado |>
-  st_drop_geometry() |>
-  select(subprefeitura, valor, idrgp_alvo, idrgp_real,
-         idrgp_diferenca, idrgp_var_percentual) |>
-  filter(!is.na(idrgp_diferenca))
-
-vetor_dif_z <- scale(df_teste$idrgp_diferenca)[, 1]
-teste_ks    <- ks.test(vetor_dif_z, "pnorm")
-
-cat("--- Teste KS (normalidade) ---\n")
-cat("D =", round(teste_ks$statistic, 4), "| p =",
-    formatC(teste_ks$p.value, format = "e", digits = 3), "\n\n")
-
-if (teste_ks$p.value < 0.05) {
-  metodo_estatistico <- "wilcoxon"
-  teste_principal <- wilcox.test(
-    df_teste$idrgp_real, df_teste$idrgp_alvo,
-    paired = TRUE, conf.int = TRUE, conf.level = 0.95, exact = FALSE)
-  medida_central <- median(df_teste$idrgp_diferenca, na.rm = TRUE)
-  mensagem_metodo <- paste0("Distribuição não normal (KS p = ",
-    formatC(teste_ks$p.value, format = "e", digits = 3),
-    "). Método: Wilcoxon pareado.")
-} else {
-  metodo_estatistico <- "t_pareado"
-  teste_principal <- t.test(
-    df_teste$idrgp_real, df_teste$idrgp_alvo,
-    paired = TRUE, conf.level = 0.95)
-  medida_central <- unname(teste_principal$estimate)
-  mensagem_metodo <- paste0("Distribuição normal (KS p = ",
-    formatC(teste_ks$p.value, format = "f", digits = 3),
-    "). Método: teste t pareado.")
-}
-
-ic_inf <- teste_principal$conf.int[1]
-ic_sup <- teste_principal$conf.int[2]
-
-cat(mensagem_metodo, "\n")
-cat("IC 95%: [", round(ic_inf, 6), ";", round(ic_sup, 6), "]\n")
-```
-
-## Classificação das subprefeituras
-
-```{r classificacao}
-df_teste <- df_teste |>
-  mutate(
-    status_var_percentual = case_when(
-      idrgp_var_percentual >  0.3  ~ "Acima do IDRGP Alvo",
-      idrgp_var_percentual < -0.3  ~ "Abaixo do IDRGP Alvo",
-      TRUE                         ~ "Dentro do IDRGP Alvo"),
-    status_estatistico = case_when(
-      idrgp_diferenca < ic_inf ~ "Abaixo do IDRGP Alvo",
-      idrgp_diferenca > ic_sup ~ "Acima do IDRGP Alvo",
-      TRUE                     ~ "Dentro do IDRGP Alvo")
-  )
-
-df_integrado <- df_integrado |>
-  select(-any_of(c("status_var_percentual", "status_estatistico"))) |>
-  left_join(df_teste |> select(subprefeitura, status_var_percentual, status_estatistico),
-            by = "subprefeitura")
-
-cat("Classificação por variação percentual:\n")
-print(df_teste |> count(status_var_percentual))
-cat("\nClassificação estatística:\n")
-print(df_teste |> count(status_estatistico))
-```
-
-## Consolidação histórica (2022–2025)
-
-```{r historico}
-integrar_ano <- function(df_agr, ano_ref) {
-  df_agr |>
-    mutate(join_key = norm_name(subprefeitura)) |>
-    left_join(df_idrgp |> select(join_key, idrgp_alvo), by = "join_key") |>
-    mutate(
-      valor = replace_na(valor, 0), idrgp_alvo = replace_na(idrgp_alvo, 0),
-      total = sum(valor, na.rm = TRUE),
-      idrgp_real = if_else(total > 0, valor / total, 0),
-      idrgp_diferenca = idrgp_real - idrgp_alvo,
-      idrgp_var_percentual = if_else(idrgp_alvo == 0, 0, idrgp_diferenca / idrgp_alvo),
-      status = case_when(
-        idrgp_var_percentual >  0.3  ~ "Acima do IDRGP Alvo",
-        idrgp_var_percentual < -0.3  ~ "Abaixo do IDRGP Alvo",
-        TRUE ~ "Dentro do IDRGP Alvo"),
-      ano = ano_ref
-    ) |> select(-total)
-}
-
-int_2022 <- integrar_ano(df_agr_2022, 2022)
-int_2023 <- integrar_ano(df_agr_2023, 2023)
-int_2024 <- integrar_ano(df_agr_2024, 2024)
-int_2025 <- df_integrado |> st_drop_geometry() |>
-  select(subprefeitura, join_key, valor, idrgp_alvo, idrgp_real,
-         idrgp_diferenca, idrgp_var_percentual) |>
-  mutate(status = coalesce(
-    df_teste$status_estatistico[match(subprefeitura, df_teste$subprefeitura)],
-    "Dentro do IDRGP Alvo"), ano = 2025)
-
-df_longo <- bind_rows(int_2022, int_2023, int_2024, int_2025) |>
-  mutate(ano = as.factor(ano))
-
-df_ciclo <- df_longo |>
-  group_by(subprefeitura) |>
-  summarise(
-    idrgp_alvo = first(idrgp_alvo),
-    valor_2022 = sum(valor[ano == "2022"], na.rm = TRUE),
-    valor_2023 = sum(valor[ano == "2023"], na.rm = TRUE),
-    valor_2024 = sum(valor[ano == "2024"], na.rm = TRUE),
-    valor_2025 = sum(valor[ano == "2025"], na.rm = TRUE),
-    .groups = "drop") |>
-  mutate(
-    valor_2022_a_2025 = valor_2022 + valor_2023 + valor_2024 + valor_2025,
-    idrgp_real_2022_a_2025 = valor_2022_a_2025 / sum(valor_2022_a_2025),
-    idrgp_var_pct_ciclo = if_else(idrgp_alvo == 0, 0,
-      (idrgp_real_2022_a_2025 - idrgp_alvo) / idrgp_alvo),
-    status_ciclo = case_when(
-      idrgp_var_pct_ciclo >  0.3  ~ "Acima do IDRGP Alvo",
-      idrgp_var_pct_ciclo < -0.3  ~ "Abaixo do IDRGP Alvo",
-      TRUE ~ "Dentro do IDRGP Alvo")
-  )
-
-df_ciclo_sf <- subprefeitura_sf |>
-  left_join(df_ciclo |> mutate(join_key = norm_name(subprefeitura)), by = "join_key")
-
-cat("✅ Consolidação histórica concluída.\n")
-```
-
-\*\*\*\*Incluir Teste estatístico no chunk acima\*\*\*\*
 
 # Mapas
 
@@ -766,7 +893,7 @@ gerar_mapa <- function(sf_data, col_status, titulo, nota = "") {
 }
 ```
 
-## Mapas 2022–2024
+## Mapas 2022, 2023 e 2024 individuais  com o status quanto ao IDRGP com a Variação de 30% [status_var_percentual (±30%): classifica cada subprefeitura pelo tamanho do desvio relativo ao alvo: (real − alvo) / alvo. Se passar de +0.30 vira “Acima”, abaixo de −0.30 vira “Abaixo”, senão “Dentro”. É um corte fixo e arbitrário (muda bastante se você trocar 30% por 20%/40%), e pode ficar “estranho” quando idrgp_alvo é muito pequeno ou zero (o percentual explode/precisa de regra especial).]
 
 ```{r mapas_hist, fig.width=12, fig.height=10}
 preparar_sf <- function(int_data) {
@@ -783,6 +910,35 @@ mapa3 <- gerar_mapa(preparar_sf(int_2024), "status",
 
 print(mapa1); print(mapa2); print(mapa3)
 ```
+
+
+### Mapas 2022, 2023 e 2024 individuais com o status quanto aos testes estatísticos [status_estatistico (IC 95%): classifica pela incerteza do desvio, usando o intervalo de confiança 95% da diferença (real − alvo) no conjunto de subprefeituras daquele ano. Se a diferença ficar abaixo do limite inferior do IC → “Abaixo”; acima do superior → “Acima”; dentro do intervalo → “Dentro”. Não depende de “30%”, é mais defensável estatisticamente, mas é relativo ao ano/amostra (o IC muda com N e variabilidade), então “Dentro” aqui significa “não detectamos diferença consistente a 95%”, não “está perto do alvo”.]
+
+```{r mapas_hist, fig.width=12, fig.height=10}
+preparar_sf_ano <- function(ano) {
+  ano_chr <- as.character(ano)
+
+  df_status <- idrgp_por_ano[[ano_chr]]$df_teste |>
+    dplyr::mutate(join_key = norm_name(subprefeitura)) |>
+    dplyr::select(join_key, status = status_estatistico)
+
+  subprefeitura_sf |>
+    dplyr::left_join(df_status, by = "join_key")
+}
+
+mapa1 <- gerar_mapa(preparar_sf_ano(2022), "status",
+  "IDRGP 2022 — Status (IC 95%) quanto ao IDRGP Alvo", "Classificação estatística (IC 95%).")
+mapa2 <- gerar_mapa(preparar_sf_ano(2023), "status",
+  "IDRGP 2023 — Status (IC 95%) quanto ao IDRGP Alvo", "Classificação estatística (IC 95%).")
+mapa3 <- gerar_mapa(preparar_sf_ano(2024), "status",
+  "IDRGP 2024 — Status (IC 95%) quanto ao IDRGP Alvo", "Classificação estatística (IC 95%).")
+
+print(mapa1); print(mapa2); print(mapa3)
+```
+
+
+
+
 
 ## Mapa 2025
 
