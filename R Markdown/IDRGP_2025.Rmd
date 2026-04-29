@@ -860,7 +860,7 @@ knitr::kable(
 
 
 
-# Mapas
+# Mapas - estrutura
 
 ```{r config_mapas}
 cores_status <- c(
