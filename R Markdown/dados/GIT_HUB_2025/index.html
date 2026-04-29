@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      name="description"
+      content="IDRGP 2025 — Índice de Distribuição Regional do Gasto Público (Quadriênio 2022–2025). Página para comunicação interna."
+    />
+    <title>IDRGP 2025 — SEPLAN / CPMA</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/css/styles.css" />
+  </head>
+
+  <body>
+    <a class="skip-link" href="#conteudo">Pular para o conteúdo</a>
+
+    <header class="site-header">
+      <div class="container header-inner">
+        <div class="brand">
+          <div class="brand-kicker">Prefeitura do Município de São Paulo</div>
+          <div class="brand-sub">
+            Secretaria Municipal de Planejamento e Eficiência — SEPLAN • Coordenadoria
+            de Planejamento, Monitoramento e Avaliação — CPMA
+          </div>
+        </div>
+        <div class="brand-badge" aria-label="IDRGP 2025">
+          <div class="badge-top">IDRGP</div>
+          <div class="badge-bottom">2025</div>
+        </div>
+      </div>
+    </header>
+
+    <main id="conteudo">
+      <section class="hero">
+        <div class="container hero-inner">
+          <div class="hero-copy">
+            <div class="chip">Índice de Distribuição Regional do Gasto Público</div>
+            <h1>Resultados do IDRGP — Quadriênio 2022–2025</h1>
+            <p class="lead">
+              O Índice de Distribuição Regional do Gasto Público (IDRGP) foi incorporado à Lei
+              do Plano Plurianual (PPA) 2022–2025 para subsidiar a decisão de alocação territorial
+              de novos investimentos e expansão de custeio.
+            </p>
+            <div class="meta-row">
+              <div class="meta">
+                <div class="meta-label">Última atualização</div>
+                <div class="meta-value">22/04/2026</div>
+              </div>
+              <div class="meta">
+                <div class="meta-label">Abrangência</div>
+                <div class="meta-value">32 Subprefeituras</div>
+              </div>
+              <div class="meta">
+                <div class="meta-label">Período</div>
+                <div class="meta-value">2022–2025</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="hero-card" role="region" aria-label="Resumo">
+            <h2 class="h2">01. Apresentação</h2>
+            <h3 class="h3">1.1 Introdução</h3>
+            <p>
+              Esta página tem o objetivo de mostrar os resultados da atualização do Índice de
+              Distribuição Regional do Gasto Público (IDRGP) de 2025 e consolidar o balanço
+              quadrienal 2022–2025.
+            </p>
+            <p>
+              O IDRGP mede se a distribuição territorial dos gastos públicos municipais está
+              alinhada às prioridades sociais e de infraestrutura de cada subprefeitura, expressas
+              no Índice de Vulnerabilidade Urbana (IVU/SEPLAN/CPMA).
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <div class="section-head">
+            <h2 class="h2">Como o indicador foi processado</h2>
+            <p class="section-sub">
+              Resumo das entradas e da organização do processamento (fases CRISP-DM).
+            </p>
+          </div>
+
+          <div class="grid-2">
+            <div class="card">
+              <h3 class="h3">O script considera, essencialmente</h3>
+              <ul class="list">
+                <li>a região (subprefeitura)</li>
+                <li>o valor do gasto público por projeto/atividade (Secretaria da Fazenda)</li>
+              </ul>
+            </div>
+
+            <div class="card">
+              <h3 class="h3">Fontes de dados</h3>
+              <ul class="list">
+                <li>
+                  Execução orçamentária:
+                  <a
+                    href="https://orcamento.prefeitura.sp.gov.br/orcamento/execucao.php"
+                    target="_blank"
+                    rel="noreferrer"
+                    >orcamento.prefeitura.sp.gov.br</a
+                  >
+                </li>
+                <li>Dados regionalizados de despesas — Secretaria Municipal da Fazenda</li>
+                <li>IDRGP Alvo — SGM/SEPLAN/CPMA (baseado no IVU 2025)</li>
+                <li>Bases históricas processadas (2022–2024) — df_integrado_2022/2023/2024.xlsx</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card card-wide">
+            <h3 class="h3">Organização do script (setores)</h3>
+            <div class="pill-grid" role="list">
+              <div class="pill" role="listitem">01. APRESENTAÇÃO — bibliotecas, funções auxiliares e parâmetros globais</div>
+              <div class="pill" role="listitem">02. ORÇAMENTO 2025 — importação e processamento da base de despesas 2025</div>
+              <div class="pill" role="listitem">03. IDRGP ALVO — importação do índice de referência</div>
+              <div class="pill" role="listitem">04. MAPA — dados cartográficos das 32 subprefeituras</div>
+              <div class="pill" role="listitem">05. INTEGRAÇÃO — consolidação dos dados em df_integrado (2025)</div>
+              <div class="pill" role="listitem">06. HISTÓRICO — importação e consolidação dos dados 2022–2024</div>
+              <div class="pill" role="listitem">07. TESTES — testes de normalidade e classificação estatística</div>
+              <div class="pill" role="listitem">08. MAPAS — 5 mapas temáticos (2022, 2023, 2024, 2025, agregado)</div>
+              <div class="pill" role="listitem">09. GRÁFICOS — 4 gráficos (IDRGP %, valores R$, série histórica)</div>
+              <div class="pill" role="listitem">10. ANEXOS — tabela detalhada por projeto/atividade</div>
+            </div>
+
+            <details class="details">
+              <summary>Ver notas (texto original do script)</summary>
+              <pre class="code-block"><code># O script considera, essencialmente:
+#   - a região (subprefeitura)
+#   - o valor do gasto público por projeto/atividade (Secretária da Fazenda)
+#
+# Fontes de dados: https://orcamento.prefeitura.sp.gov.br/orcamento/execucao.php
+#   1. Dados regionalizados de despesas — Secretaria Municipal da Fazenda
+#   2. IDRGP Alvo — SGM/SEPLAN/CPMA (baseado no IVU 2025)
+#   3. Bases históricas processadas (2022–2024) — df_integrado_2022/2023/2024.xlsx
+#
+# Organização do script (fases CRISP-DM em cada setor):
+#   01. APRESENTAÇÃO   — bibliotecas, funções auxiliares e parâmetros globais
+#   02. ORÇAMENTO 2025 — importação e processamento da base de despesas 2025
+#   03. IDRGP ALVO     — importação do índice de referência
+#   04. MAPA           — dados cartográficos das 32 subprefeituras
+#   05. INTEGRAÇÃO     — consolidação dos dados em df_integrado (2025)
+#   06. HISTÓRICO      — importação e consolidação dos dados 2022–2024
+#   07. TESTES         — testes de normalidade e classificação estatística
+#   08. MAPAS          — 5 mapas temáticos (2022, 2023, 2024, 2025, agregado)
+#   09. GRÁFICOS       — 4 gráficos (IDRGP %, valores R$, série histórica)
+#   10. ANEXOS         — tabela detalhada por projeto/atividade</code></pre>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section-alt" id="mapas">
+        <div class="container">
+          <div class="section-head">
+            <h2 class="h2">Mapas temáticos</h2>
+            <p class="section-sub">Visualização lado a lado (ordem cronológica crescente).</p>
+          </div>
+
+          <div class="media-grid" data-gallery="mapas">
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/maps/mapa1_idrgp_2022.png" data-title="Mapa 1 — IDRGP 2022" data-download="assets/docs/mapa1_idrgp_2022.pdf">
+                <img src="assets/img/maps/mapa1_idrgp_2022.png" alt="Mapa do IDRGP 2022" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Mapa 1 — IDRGP 2022</div>
+                <a class="cap-link" href="assets/docs/mapa1_idrgp_2022.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/maps/mapa2_idrgp_2023.png" data-title="Mapa 2 — IDRGP 2023" data-download="assets/docs/mapa2_idrgp_2023.pdf">
+                <img src="assets/img/maps/mapa2_idrgp_2023.png" alt="Mapa do IDRGP 2023" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Mapa 2 — IDRGP 2023</div>
+                <a class="cap-link" href="assets/docs/mapa2_idrgp_2023.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/maps/mapa3_idrgp_2024.png" data-title="Mapa 3 — IDRGP 2024" data-download="assets/docs/mapa3_idrgp_2024.pdf">
+                <img src="assets/img/maps/mapa3_idrgp_2024.png" alt="Mapa do IDRGP 2024" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Mapa 3 — IDRGP 2024</div>
+                <a class="cap-link" href="assets/docs/mapa3_idrgp_2024.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/maps/mapa4_idrgp_2025.png" data-title="Mapa 4 — IDRGP 2025" data-download="assets/docs/mapa4_idrgp_2025.pdf">
+                <img src="assets/img/maps/mapa4_idrgp_2025.png" alt="Mapa do IDRGP 2025" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Mapa 4 — IDRGP 2025</div>
+                <a class="cap-link" href="assets/docs/mapa4_idrgp_2025.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/maps/mapa5_idrgp_agregado_2022_2025.png" data-title="Mapa 5 — Agregado 2022–2025" data-download="assets/docs/mapa5_idrgp_agregado_2022_2025.pdf">
+                <img src="assets/img/maps/mapa5_idrgp_agregado_2022_2025.png" alt="Mapa agregado do IDRGP (2022 a 2025)" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Mapa 5 — Agregado 2022–2025</div>
+                <a class="cap-link" href="assets/docs/mapa5_idrgp_agregado_2022_2025.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+          </div>
+
+          <p class="hint">
+            Dica: clique em qualquer mapa para ampliar.
+          </p>
+        </div>
+      </section>
+
+      <section class="section" id="graficos">
+        <div class="container">
+          <div class="section-head">
+            <h2 class="h2">Gráficos</h2>
+            <p class="section-sub">Visões complementares do IDRGP 2025 e do ciclo 2022–2025.</p>
+          </div>
+
+          <div class="media-grid" data-gallery="graficos">
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/graphs/grafico1_idrgp_2025_pct.png" data-title="Gráfico 1 — IDRGP 2025 (%)" data-download="assets/docs/grafico1_idrgp_2025_pct.pdf">
+                <img src="assets/img/graphs/grafico1_idrgp_2025_pct.png" alt="Gráfico do IDRGP 2025 em percentual" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Gráfico 1 — IDRGP 2025 (%)</div>
+                <a class="cap-link" href="assets/docs/grafico1_idrgp_2025_pct.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/graphs/grafico2_idrgp_agregado_2022_2025_pct.png" data-title="Gráfico 2 — Agregado 2022–2025 (%)" data-download="assets/docs/grafico2_idrgp_agregado_2022_2025_pct.pdf">
+                <img src="assets/img/graphs/grafico2_idrgp_agregado_2022_2025_pct.png" alt="Gráfico agregado 2022 a 2025 em percentual" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Gráfico 2 — Agregado 2022–2025 (%)</div>
+                <a class="cap-link" href="assets/docs/grafico2_idrgp_agregado_2022_2025_pct.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/graphs/grafico3_idrgp_2025_reais.png" data-title="Gráfico 3 — IDRGP 2025 (R$)" data-download="assets/docs/grafico3_idrgp_2025_reais.pdf">
+                <img src="assets/img/graphs/grafico3_idrgp_2025_reais.png" alt="Gráfico do IDRGP 2025 em reais" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Gráfico 3 — IDRGP 2025 (R$)</div>
+                <a class="cap-link" href="assets/docs/grafico3_idrgp_2025_reais.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/graphs/grafico4_idrgp_serie_2022_2025_reais.png" data-title="Gráfico 4 — Série 2022–2025 (R$)" data-download="assets/docs/grafico4_idrgp_serie_2022_2025_reais.pdf">
+                <img src="assets/img/graphs/grafico4_idrgp_serie_2022_2025_reais.png" alt="Gráfico de série histórica 2022 a 2025 em reais" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Gráfico 4 — Série 2022–2025 (R$)</div>
+                <a class="cap-link" href="assets/docs/grafico4_idrgp_serie_2022_2025_reais.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+
+            <figure class="media-card">
+              <button class="media-btn" type="button" data-full="assets/img/graphs/grafico_dist_diferencas_2025.png" data-title="Distribuição de diferenças — 2025" data-download="assets/docs/grafico_dist_diferencas_2025.pdf">
+                <img src="assets/img/graphs/grafico_dist_diferencas_2025.png" alt="Gráfico de distribuição de diferenças do IDRGP 2025" loading="lazy" />
+              </button>
+              <figcaption>
+                <div class="cap-title">Distribuição de diferenças — 2025</div>
+                <a class="cap-link" href="assets/docs/grafico_dist_diferencas_2025.pdf" target="_blank" rel="noreferrer">Baixar PDF</a>
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <div class="footer-left">
+          <div class="footer-title">IDRGP 2025 • SEPLAN / CPMA</div>
+          <div class="footer-sub">
+            Comunicação interna — materiais (mapas e gráficos) para consulta e compartilhamento.
+          </div>
+        </div>
+        <div class="footer-right">
+          <a class="footer-link" href="#mapas">Mapas</a>
+          <a class="footer-link" href="#graficos">Gráficos</a>
+        </div>
+      </div>
+    </footer>
+
+    <div class="modal" data-modal aria-hidden="true">
+      <div class="modal-backdrop" data-close></div>
+      <div class="modal-panel" role="dialog" aria-modal="true" aria-label="Visualização ampliada">
+        <div class="modal-head">
+          <div class="modal-title" data-modal-title>Visualização</div>
+          <div class="modal-actions">
+            <a class="btn btn-ghost" data-modal-download href="#" target="_blank" rel="noreferrer">Baixar PDF</a>
+            <button class="btn btn-primary" type="button" data-close>Fechar</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <img data-modal-img alt="" />
+        </div>
+      </div>
+    </div>
+
+    <script src="assets/js/main.js"></script>
+  </body>
+</html>
