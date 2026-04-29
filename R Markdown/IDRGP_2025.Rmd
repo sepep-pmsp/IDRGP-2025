@@ -38,13 +38,14 @@ library(scales)      # formatação de eixos em gráficos
 library(writexl)     # exportação para Excel
 library(sf)          # dados geoespaciais e mapas
 library(ggplot2)     # gráficos
+library(knitr)       # exibir tabelas
 ```
 
 ## Funções auxiliares
 
 A função `norm_name()` cria uma chave de integração entre as diversas bases de dados. Remove acentos, converte para minúsculas e elimina caracteres não alfabéticos, garantindo que nomes escritos de formas ligeiramente diferentes sejam reconhecidos como iguais.
 
-```{r funcao_norm_name}
+```{r funcao_norm_name, echo=FALSE}
 norm_name <- function(x) {
   x |>
     str_to_lower() |>
@@ -65,7 +66,7 @@ norm_name <- function(x) {
 
 Tabela oficial de correspondência **sigla → nome** das 32 subprefeituras. Usada para padronizar nomes vindos de diferentes fontes (shapefile, orçamento, IVU).
 
-```{r df_siglas}
+```{r df_siglas, echo=FALSE}
 df_siglas <- tibble(
   sigla = c("AF","BT","CL","CS","CV","AD","CT","EM","FO","GU",
             "IP","IT","IQ","JA","JT","LA","MB","MO","PA","PE",
@@ -90,7 +91,7 @@ df_siglas <- tibble(
 
 As bases orçamentárias são arquivos locais de dados coletados até 30/04/2026. Para atualizar, basta **substituir os arquivos** na pasta `dados/` e ajustar os nomes abaixo.
 
-```{r caminhos}
+```{r caminhos, echo=FALSE}
 
 # ============================================================================
 # CONFIGURAÇÃO DE ARQUIVOS — EDITE AQUI para atualizar as bases
@@ -154,7 +155,7 @@ O AOE (ou **IDRGP Alvo**) é o índice de referência que indica qual proporçã
 
 ## Importação do IVU
 
-```{r idrgp_alvo}
+```{r idrgp_alvo, echo=FALSE}
 
 df_idrgp <- readxl::read_excel(arquivo_ivu) |>
   janitor::clean_names() |>
@@ -182,7 +183,7 @@ df_idrgp <- readxl::read_excel(arquivo_ivu) |>
 
 ## suprimir
 
-```{r controle_idrgp}
+```{r controle_idrgp, echo=FALSE}
 # A soma do IDRGP Alvo deve ser igual a 1 (100%)
 soma_idrgp <- sum(df_idrgp$idrgp_alvo, na.rm = TRUE)
 
@@ -217,8 +218,77 @@ Nesta seção, as bases orçamentárias dos **4 anos** do ciclo PPA são importa
 
 Aqui se busca verificar o quanto se avançou na regionalização no quadriênio, bem como em qual proporção temos a regionalização de cada ação orçamentária.
 
-```{r}
-orcamento_ppa<- 
+```{r echo=FALSE}
+#criando arquivos paa cada execução orçamentária anual (loa) e para o conjunto dos anos (PPA)
+loa22 <- read_excel(arquivo_2022) %>% 
+  select(-DATA_LIQUIDAÇÃO, -DATA_EXTRAÇÃO)
+loa23 <- read_excel(arquivo_2023) %>% 
+  select(-DATA_LIQUIDAÇÃO)
+loa24 <- read_excel(arquivo_2024) %>% 
+  select(-DATA_LIQUIDAÇÃO)
+loa25 <- read_excel(arquivo_2025) %>% 
+  select(-DATA_LIQUIDAÇÃO)
+orcamento_ppa <- rbind(loa22, loa23, loa24, loa25)
+rm(loa22, loa23, loa24, loa25)
+
+#anlisar por ação e ano a regionalização
+acao_reg<- orcamento_ppa %>% 
+  group_by(CÓDIGO_PROJ_ATIV, DESCRIÇÃO_PROJ_ATIV, ANO_EMPENHO, TIPO_REGIONALIZAÇÃO) %>% 
+  summarise(valor = sum(VALOR_DETALHAMENTO_AÇÃO, na.rm = T))
+analise_acao_reg <- acao_reg %>%
+  group_by(CÓDIGO_PROJ_ATIV, ANO_EMPENHO) %>%
+  mutate(TIPO_REGIONALIZAÇÃO = trimws(TIPO_REGIONALIZAÇÃO),
+         total = sum(valor, na.rm = TRUE),
+         percentual = round(valor / total, 2))
+
+mudancas <- analise_acao_reg %>%
+  slice_max(percentual, n = 1, with_ties = FALSE) %>%
+  arrange(CÓDIGO_PROJ_ATIV, ANO_EMPENHO) %>%
+  group_by(CÓDIGO_PROJ_ATIV) %>%
+  mutate(total_quad = sum(total),
+         mudou = TIPO_REGIONALIZAÇÃO != lag(TIPO_REGIONALIZAÇÃO)) %>%
+  filter(any(mudou, na.rm = TRUE)) %>%
+  arrange(desc(total_quad), CÓDIGO_PROJ_ATIV, ANO_EMPENHO) %>% 
+  group_by(CÓDIGO_PROJ_ATIV)
+print(mudancas)
+
+#Relação de mudanças com o total de projetos atividades e proj/ativ reionalizados
+n_proj_ativ <- orcamento_ppa %>%  
+  summarise(n_p_a = n_distinct(CÓDIGO_PROJ_ATIV))
+n_p_a_regionalizado <- orcamento_ppa %>% 
+  filter(TIPO_REGIONALIZAÇÃO == "Despesa Regionalizável") %>% 
+  summarise(n_pa_reg = n_distinct(CÓDIGO_PROJ_ATIV))
+n_variacao <- mudancas %>% 
+  ungroup() %>%
+  filter(mudou == TRUE) %>%
+  distinct(CÓDIGO_PROJ_ATIV) %>%
+  summarise(n_mudancas = n())
+tabela_resumo <- tibble(
+  Indicador = c(
+    "Total de Projetos/Atividades",
+    "Projetos/Atividades Regionalizáveis",
+    "Projetos/Atividades com Mudança"),
+  Valor = c(
+    n_proj_ativ$n_p_a,
+    n_p_a_regionalizado$n_pa_reg,
+    n_variacao$n_mudancas))
+kable(tabela_resumo, caption = "Resumo dos Projetos/Atividades")
+
+#verificanco as inconsistências de regionalização por proj/ativ no anos
+tabela_inconsistencias <- analise_acao_reg %>% 
+  group_by(CÓDIGO_PROJ_ATIV, TIPO_REGIONALIZAÇÃO) %>%
+filter(n_distinct(percentual) > 1)
+#resumo (considera apenas variaçõea maiores de 5%)
+tabela_inconsistencias <- tabela_inconsistencias %>% 
+  mutate(variacao = round(max(percentual) - min(percentual), 2),
+  ) %>%
+  filter(variacao > 0.05) 
+print(tabela_inconsistencias)
+tabela_inconsistencias %>% 
+  filter(CÓDIGO_PROJ_ATIV == 4113 | CÓDIGO_PROJ_ATIV == 2096) %>% 
+  select(- DESCRIÇÃO_PROJ_ATIV, -variacao)
+
+
 ```
 
 ```{r funcoes_orcamento}
@@ -272,10 +342,32 @@ resumo_regionalizacao <- function(arquivo, ano, sheet = 1) {
 }
 
 ```
+A despeito de haver muitos casos NA em 2024, a tabela mostra que não há uma variação tão grande entre os casos regionalizados e não regionalizados na maioria das ações.  
+
+Alguns destaques em relação a inconsistência (variação) podem ser: 
+
+### Sucesso de regionalização: 
+* *4701-Compensações Tarifárias do Sistema de Ônibus*, passa a ser regionalizada em 2024. Este é o caso de "inconsistência" (variação) que envolve maior montante de recursos.
+* *4113-Sistema Municipal de Regulação, Controle, Avaliação e Auditoria do SUS* não foi regionalizada em 2022, mas avançou ***paulatinamente*** até ser 100% regionalizada em 2025. 
+* *6553-Alimentação Escolar*, foi regionalizada só em 2025.
+* As três anteriore, são os proj/ativ com mais recursos liquidados, depois vem *6007-Serviços de Limpeza Urbana - Varrição e Lavagem de Áreas Públicas* e *6010-Concessão dos Serviços Divisíveis de Limpeza Urbana em Regime Público*, que  passaram a ser totalmente regionalizadas a partir de 2023.
+* *2096-Manutenção e Operação de Terminais de Ônibus* era pouco regionalizada em 2022, mas depois foi para 100%. 
+* Outros casos de ampliação da regionalização do dado ao longo dos anos: *2512-Manutenção e Operação de Serviço de Atendimento Médico de Urgência (SAMU)*, *2635-Serviço de Moradia Transitória* e *6669-Educação Ambiental*.
+* *7127-Estudos, Planos e Projetos Ambientais* é um caso que aumenta a regionalização, mas não chega a 100%.
+
+#### Casos de "desregionalização": 
+* *1055-Ampliação, Reforma e Requalificação das Instalações para a Guarda Civil Metropolitana* teva uma desregionalização em 2024. 
+* *4901-Manutenção e Operação dos Sistemas de Monitoramento e Alerta de Enchentes* também.
+* *5507-Projeto de Intervenção Urbana - PIU* ficou menos regionalizada de uma ano para o outro e tem a proporção 60x40.
+
+#### Casos bem dividido:
+* A ação *4910-Fomento à Cooperação, Parcerias e Captação de Investimentos Internacionais* tem uma proporção baixa de regionálizável, variando entre 12$ e 28% a depender do ano.
+* *4332-Manutenção da Ouvidoria de Direitos Humanos*
+* *7208-Parceria Público-Privada (PPP) - CEU*
 
 ## Função de limpeza unificada
 
-```{r funcao_limpeza}
+```{r funcao_limpeza, echo=FALSE}
 #' Importa e padroniza uma base orçamentária anual.
 #'
 #' @param arquivo Caminho do arquivo Excel.
@@ -335,7 +427,21 @@ limpar_orcamento <- function(arquivo, ano, sheet = 1) {
 
 ## Processamento dos 4 anos
 
-```{r processamento, message=FALSE, warning=FALSE}
+```{r processamento, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Detecta a aba correta para cada arquivo
+detectar_sheet <- function(arquivo, ano) {
+  sheets <- readxl::excel_sheets(arquivo)
+  match <- stringr::str_detect(sheets, as.character(ano))
+  if (any(match)) sheets[which(match)[1]] else sheets[1]
+}
+
+agregar_por_subpref <- function(df) {
+  df |>
+    dplyr::group_by(subprefeitura) |>
+    dplyr::summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop")
+}
+
 anos <- 2022:2025
 arquivos <- c(arquivo_2022, arquivo_2023, arquivo_2024, arquivo_2025)
 names(arquivos) <- as.character(anos)
@@ -403,7 +509,8 @@ df_agr_2025 <- agregar_por_subpref(df_2025)
 
 Carregamos o shapefile das subprefeituras baixado do GeoSampa **uma vez** e reaproveitamos em todos os anos.
 
-```{r base_cartografica, message=FALSE, warning=FALSE}
+```{r integracao_2025, echo=FALSE}
+# Dados cartográficos
 subprefeitura_sf <- read_sf(arquivo_shp) |>
   clean_names() |>
   st_make_valid() |>
@@ -862,7 +969,7 @@ knitr::kable(
 
 # Mapas - estrutura
 
-```{r config_mapas}
+```{r config_mapas, echo=FALSE}
 cores_status <- c(
   "Abaixo do IDRGP Alvo" = "#d97a0f",
   "Dentro do IDRGP Alvo" = "#0ea1cf",
@@ -895,7 +1002,7 @@ gerar_mapa <- function(sf_data, col_status, titulo, nota = "") {
 
 ## Mapas 2022, 2023 e 2024 individuais  com o status quanto ao IDRGP com a Variação de 30% [status_var_percentual (±30%): classifica cada subprefeitura pelo tamanho do desvio relativo ao alvo: (real − alvo) / alvo. Se passar de +0.30 vira “Acima”, abaixo de −0.30 vira “Abaixo”, senão “Dentro”. É um corte fixo e arbitrário (muda bastante se você trocar 30% por 20%/40%), e pode ficar “estranho” quando idrgp_alvo é muito pequeno ou zero (o percentual explode/precisa de regra especial).]
 
-```{r mapas_hist, fig.width=12, fig.height=10}
+```{r mapas_hist, echo=FALSE, fig.height=10, fig.width=12}
 preparar_sf <- function(int_data) {
   subprefeitura_sf |>
     left_join(int_data |> select(join_key, status), by = "join_key")
@@ -942,7 +1049,7 @@ print(mapa1); print(mapa2); print(mapa3)
 
 ## Mapa 2025 - status estatístico adotado
 
-```{r mapa_2025, fig.width=12, fig.height=10}
+```{r mapa_2025, echo=FALSE, fig.height=10, fig.width=12}
 mapa4 <- gerar_mapa(df_integrado, "status_estatistico",
   "IDRGP 2025 — Status quanto ao IDRGP Alvo",
   paste0("IC do teste ", toupper(metodo_estatistico),
@@ -993,7 +1100,7 @@ cat("✅ 5 mapas gerados.\n")
 
 # Gráficos
 
-```{r tema_graficos}
+```{r tema_graficos, echo=FALSE}
 tema_barras <- theme_minimal(base_size = 12) +
   theme(
     legend.position = "bottom",
@@ -1006,7 +1113,7 @@ tema_barras <- theme_minimal(base_size = 12) +
 
 ## G1 — IDRGP 2025: Alvo vs. Real (%)
 
-```{r grafico1, fig.width=14, fig.height=12}
+```{r grafico1, echo=FALSE, fig.width=14, fig.height=12}
 grafico1 <- ggplot(df_integrado, aes(y = reorder(subprefeitura, idrgp_alvo))) +
   geom_col(aes(x = idrgp_real, fill = status_estatistico), width = 0.65, alpha = 0.9) +
   geom_point(aes(x = idrgp_alvo, shape = "IDRGP Alvo"), color = "#c0392b", size = 3) +
@@ -1027,7 +1134,7 @@ print(grafico1)
 
 ## G2 — IDRGP Agregado 2022–2025 (%)
 
-```{r grafico2, fig.width=14, fig.height=12}
+```{r grafico2, echo=FALSE, fig.width=14, fig.height=12}
 grafico2 <- ggplot(df_ciclo, aes(y = reorder(subprefeitura, idrgp_alvo))) +
   geom_col(aes(x = idrgp_real_2022_a_2025, fill = status_ciclo), width = 0.65, alpha = 0.9) +
   geom_point(aes(x = idrgp_alvo, shape = "IDRGP Alvo"), color = "#c0392b", size = 3) +
@@ -1087,7 +1194,7 @@ print(grafico3)
 
 ## G4 — IDRGP 2022–2025: Série Histórica (R\$)
 
-```{r grafico4, fig.width=14, fig.height=12}
+```{r grafico4, echo=FALSE, fig.width=14, fig.height=12}
 df_longo_plot <- df_longo |>
   mutate(
     subprefeitura = factor(subprefeitura,
@@ -1126,7 +1233,7 @@ cat("✅ 4 gráficos gerados.\n")
 
 Detalhamento do valor liquidado por **projeto/atividade** em cada subprefeitura — apenas para o ano de **2025**.
 
-```{r anexos}
+```{r anexos, echo=FALSE}
 df_anexo <- df_2025 |>
   group_by(subprefeitura, descricao_proj_ativ) |>
   summarise(valor_liquidado = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") |>
@@ -1239,7 +1346,7 @@ graf_orgao_sub <- gasto_orgao_reg %>%
 
 ## Exportação de mapas e gráficos
 
-```{r exporta_png}
+```{r exporta_png, echo=FALSE}
 # Mapas (300 dpi)
 ggsave(file.path(pasta_saida, "mapa1_idrgp_2022.png"), mapa1, width=12, height=10, dpi=300)
 ggsave(file.path(pasta_saida, "mapa2_idrgp_2023.png"), mapa2, width=12, height=10, dpi=300)
@@ -1258,7 +1365,7 @@ cat("✅ Mapas e gráficos exportados.\n")
 
 ## Exportação de dados em Excel
 
-```{r exporta_xlsx}
+```{r exporta_xlsx, echo=FALSE}
 write_xlsx(
   df_integrado |> st_drop_geometry() |> select(-any_of("join_key")),
   path = file.path(pasta_saida, "df_integrado_2025.xlsx"))
@@ -1288,7 +1395,7 @@ cat("✅ Planilhas exportadas.\n")
 
 ## Exportação geoespacial
 
-```{r exporta_geo}
+```{r exporta_geo, echo=FALSE}
 # GeoPackage — IDRGP 2025
 gpkg_2025 <- file.path(pasta_saida, "idrgp_2025.gpkg")
 if (file.exists(gpkg_2025)) file.remove(gpkg_2025)
