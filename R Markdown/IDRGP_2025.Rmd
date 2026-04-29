@@ -30,7 +30,7 @@ Este documento consolida a análise do ciclo PPA **2022–2025**, considerando *
 
 ## Bibliotecas
 
-```{r bibliotecas, message=FALSE, warning=FALSE}
+```{r bibliotecas, echo=FALSE, message=FALSE, warning=FALSE}
 library(tidyverse)   # manipulação e visualização de dados
 library(readxl)      # leitura de arquivos Excel
 library(janitor)     # padronização de nomes de colunas
@@ -291,7 +291,7 @@ tabela_inconsistencias %>%
 
 ```
 
-```{r funcoes_orcamento}
+```{r funcoes_orcamento, echo=FALSE}
 detectar_sheet <- function(arquivo, ano) {
   sheets <- readxl::excel_sheets(arquivo)
   match <- stringr::str_detect(sheets, as.character(ano))
@@ -427,7 +427,7 @@ limpar_orcamento <- function(arquivo, ano, sheet = 1) {
 
 ## Processamento dos 4 anos
 
-```{r processamento, echo=FALSE, message=FALSE, warning=FALSE}
+```{r processamento_anos_2025_2025, echo=FALSE, message=FALSE, warning=FALSE}
 
 # Detecta a aba correta para cada arquivo
 detectar_sheet <- function(arquivo, ano) {
@@ -474,9 +474,9 @@ knitr::kable(
 )
 ```
 
-# teste de adaptação dos 4 anos mas com o contraste entre os documentos e sua relação com a base anual que #se desenvolve na relação de uma para uma. A diferença maior aqui e que o desenvolvimento também pode sr #visto por ano 
+# teste de adaptação dos 4 anos mas, com o contraste entre os documentos no próprio código o que simplifica sua relação com a base anual que se desenvolve na relação de uma para muitas. 
 
-```{r processamento, message=FALSE, warning=FALSE}
+```{r processamento, echo=FALSE, message=FALSE, warning=FALSE}
 # Detecta a aba correta para cada arquivo
 detectar_sheet <- function(arquivo, ano) {
   sheets <- excel_sheets(arquivo)
@@ -533,7 +533,7 @@ Nesta seção, para **cada ano** nós geramos:
 
 ## Funções (IDRGP por ano)
 
-```{r funcoes_idrgp_por_ano}
+```{r funcoes_idrgp_por_ano, echo=FALSE}
 testar_idrgp <- function(df_base) {
   df_teste <- df_base |>
     st_drop_geometry() |>
@@ -643,7 +643,7 @@ integrar_idrgp_ano <- function(df_agr_ano, ano_ref, subprefeitura_sf, df_idrgp) 
 
 Este chunk faz o “trabalho pesado” uma única vez e guarda tudo em listas fáceis de usar.
 
-```{r prepara_listas, message=FALSE, warning=FALSE}
+```{r prepara_listas, echo=FALSE, message=FALSE, warning=FALSE}
 # 1) Regionalização por ação, por ano
 df_reg <- purrr::imap_dfr(arquivos, function(arq, ano_chr) {
   ano <- as.integer(ano_chr)
@@ -666,7 +666,7 @@ purrr::iwalk(idrgp_por_ano, function(res, ano_chr) {
 
 ## Resumo geral da regionalização (por ano)
 
-```{r resumo_regionalizacao_ano, message=FALSE, warning=FALSE}
+```{r resumo_regionalizacao_ano, echo=FALSE, message=FALSE, warning=FALSE}
 resumo_reg_ano <- df_reg |>
   group_by(ano) |>
   summarise(
@@ -696,7 +696,7 @@ Para ficar **didático e replicável**, usamos:
 2) **Teste estatístico do IDRGP** (KS + método + IC 95%)  
 3) **Classificação das subprefeituras** (estatística e variação percentual)
 
-```{r funcao_imprimir_ano, message=FALSE, warning=FALSE}
+```{r funcao_imprimir_ano, echo=FALSE, message=FALSE, warning=FALSE}
 imprimir_analise_ano <- function(ano) {
   ano_chr <- as.character(ano)
 
@@ -781,25 +781,25 @@ imprimir_analise_ano <- function(ano) {
 
 ## Análise de 2022
 
-```{r analise_2022, results='asis', message=FALSE, warning=FALSE}
+```{r analise_2022, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 imprimir_analise_ano(2022)
 ```
 
 ## Análise de 2023
 
-```{r analise_2023, results='asis', message=FALSE, warning=FALSE}
+```{r analise_2023, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 imprimir_analise_ano(2023)
 ```
 
 ## Análise de 2024
 
-```{r analise_2024, results='asis', message=FALSE, warning=FALSE}
+```{r analise_2024, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 imprimir_analise_ano(2024)
 ```
 
 ## Análise de 2025
 
-```{r analise_2025, results='asis', message=FALSE, warning=FALSE}
+```{r analise_2025, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 imprimir_analise_ano(2025)
 ```
 
@@ -807,7 +807,7 @@ imprimir_analise_ano(2025)
 
 Aqui consolidamos o **ciclo inteiro** e também aplicamos o mesmo teste estatístico no **acumulado 2022–2025**.
 
-```{r historico}
+```{r historico, echo=FALSE}
 # Para manter o relatório “compatível” com os mapas/gráficos já montados,
 # definimos aqui os objetos do ano base (2025) a partir das listas.
 res_2025 <- idrgp_por_ano[["2025"]]
@@ -914,59 +914,6 @@ cat("✅ Teste do ciclo:", toupper(metodo_estatistico_ciclo),
     "| KS p =", formatC(teste_ks_ciclo$p.value, format="e", digits=2),
     "| IC 95% [", round(ic_inf_ciclo, 6), ";", round(ic_sup_ciclo, 6), "]\n")
 ```
-
-## Preparação (gera tudo em listas)
-
-Este chunk faz o “trabalho pesado” uma única vez e guarda tudo em listas fáceis de usar.
-
-```{r prepara_listas, message=FALSE, warning=FALSE}
-# 1) Regionalização por ação, por ano
-df_reg <- purrr::imap_dfr(arquivos, function(arq, ano_chr) {
-  ano <- as.integer(ano_chr)
-  aba <- detectar_sheet(arq, ano)
-  resumo_regionalizacao(arq, ano, aba)
-})
-
-reg_por_ano <- split(df_reg, df_reg$ano)
-
-# 2) IDRGP por ano (teste + classificação)
-idrgp_por_ano <- purrr::imap(agrs, function(df_agr_ano, ano_chr) {
-  integrar_idrgp_ano(df_agr_ano, as.integer(ano_chr), subprefeitura_sf, df_idrgp)
-})
-
-# (Opcional) expõe variáveis “amigáveis” no ambiente: idrgp_2022, idrgp_2023
-purrr::iwalk(idrgp_por_ano, function(res, ano_chr) {
-  assign(paste0("idrgp_", ano_chr), res, envir = .GlobalEnv)
-})
-```
-
-## Resumo geral da regionalização (por ano)
-
-```{r resumo_regionalizacao_ano, message=FALSE, warning=FALSE}
-resumo_reg_ano <- df_reg |>
-  group_by(ano) |>
-  summarise(
-    valor_total = sum(valor_total, na.rm = TRUE),
-    valor_regionalizado = sum(valor_regionalizado, na.rm = TRUE),
-    perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_),
-    .groups = "drop"
-  )
-
-knitr::kable(
-  resumo_reg_ano |>
-    mutate(
-      valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
-      valor_regionalizado = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_regionalizado),
-      perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
-    ),
-  col.names = c("Ano","Valor total","Valor regionalizado","% regionalizado"),
-  caption = "Regionalização do orçamento (por valor) — resumo por ano"
-)
-```
-
-
-
-
 # Mapas - estrutura
 
 ```{r config_mapas, echo=FALSE}
@@ -1002,7 +949,7 @@ gerar_mapa <- function(sf_data, col_status, titulo, nota = "") {
 
 ## Mapas 2022, 2023 e 2024 individuais  com o status quanto ao IDRGP com a Variação de 30% [status_var_percentual (±30%): classifica cada subprefeitura pelo tamanho do desvio relativo ao alvo: (real − alvo) / alvo. Se passar de +0.30 vira “Acima”, abaixo de −0.30 vira “Abaixo”, senão “Dentro”. É um corte fixo e arbitrário (muda bastante se você trocar 30% por 20%/40%), e pode ficar “estranho” quando idrgp_alvo é muito pequeno ou zero (o percentual explode/precisa de regra especial).]
 
-```{r mapas_hist, echo=FALSE, fig.height=10, fig.width=12}
+```{r mapas_hist_2022_2025, echo=FALSE, fig.height=10, fig.width=12}
 preparar_sf <- function(int_data) {
   subprefeitura_sf |>
     left_join(int_data |> select(join_key, status), by = "join_key")
@@ -1021,7 +968,7 @@ print(mapa1); print(mapa2); print(mapa3)
 
 ### Mapas 2022, 2023 e 2024 individuais com o status quanto aos testes estatísticos [status_estatistico (IC 95%): classifica pela incerteza do desvio, usando o intervalo de confiança 95% da diferença (real − alvo) no conjunto de subprefeituras daquele ano. Se a diferença ficar abaixo do limite inferior do IC → “Abaixo”; acima do superior → “Acima”; dentro do intervalo → “Dentro”. Não depende de “30%”, é mais defensável estatisticamente, mas é relativo ao ano/amostra (o IC muda com N e variabilidade), então “Dentro” aqui significa “não detectamos diferença consistente a 95%”, não “está perto do alvo”.]
 
-```{r mapas_hist, fig.width=12, fig.height=10}
+```{r mapas_hist, echo=FALSE, fig.height=10, fig.width=12}
 preparar_sf_ano <- function(ano) {
   ano_chr <- as.character(ano)
 
@@ -1059,7 +1006,7 @@ print(mapa4)
 
 ## Mapa Agregado 2022–2025
 
-```{r mapa_ciclo, fig.width=12, fig.height=10}
+```{r mapa_ciclo, echo=FALSE, fig.height=10, fig.width=12}
 # garante a diferença no próprio sf
 if (!"idrgp_diferenca_ciclo" %in% names(df_ciclo_sf)) {
   df_ciclo_sf <- df_ciclo_sf |>
@@ -1154,7 +1101,7 @@ print(grafico2)
 
 ## G3 — IDRGP 2025: Valores Absolutos (R\$)
 
-```{r grafico3, fig.width=14, fig.height=12}
+```{r grafico3, echo=FALSE, fig.height=12, fig.width=14}
 df_plot <- df_integrado |>
   dplyr::mutate(
     status_valor_plot = dplyr::recode(
@@ -1249,7 +1196,7 @@ cat("Valor total:", format(sum(df_anexo$valor_liquidado), big.mark = ".", decima
 - Uma tabela para os 10 maiores proj/ativ e valor por sub
 - Uma tabelea por sub com a distribuição dos maiores gastos por órgão
 
-```{r}
+```{r echo=FALSE}
 #Primeira tabela
 gasto_reg<- rbind(df_2022, df_2023, df_2024, df_2025) %>% 
   group_by(subprefeitura, descricao_proj_ativ) %>% 
@@ -1259,50 +1206,38 @@ tabela_gasto_sub<- gasto_reg %>%
   group_by(subprefeitura) %>% 
   slice_max(order_by = valor, n = 10)
 ```
+```{r tabela_orgao_2022_2025, echo=FALSE, message=FALSE, warning=FALSE}
+# Lê e padroniza só o que importa (subprefeitura, órgão, valor)
+pegar_base <- function(arq, ano) {
+  df <- readxl::read_xlsx(arq)
 
-```{r tabela_orgao_2022_2025, message=FALSE, warning=FALSE}
-# 1) Função: padroniza o nome da coluna "Sigla do órgão"
-pad_sigla_orgao <- function(df) {
   nm <- names(df)
-  nm_norm <- tolower(iconv(nm, from = "", to = "ASCII//TRANSLIT"))
+  n2 <- tolower(iconv(nm, from = "", to = "ASCII//TRANSLIT"))
 
-  i <- which(grepl("sigla", nm_norm) & grepl("org", nm_norm))[1]
-  if (is.na(i)) stop("Não achei coluna de sigla do órgão. Colunas: ", paste(nm, collapse = ", "))
+  col_sub <- nm[which(grepl("subpref", n2))[1]]
+  col_org <- nm[which(grepl("sigla", n2) & grepl("org", n2))[1]]
+  col_vlr <- nm[which(grepl("valor", n2) | grepl("vlr", n2))[1]]
 
-  dplyr::rename(df, sigla_orgao = !!rlang::sym(nm[i]))
-}
+  if (any(is.na(c(col_sub, col_org, col_vlr)))) {
+    stop("Não achei colunas em ", basename(arq), ". Colunas: ", paste(nm, collapse = ", "))
+  }
 
-# 2) Junta 2022–2025 (já padronizando a sigla do órgão)
-pad_col <- function(df, padrao, novo_nome) {
-  nm <- names(df)
-  nm_norm <- tolower(iconv(nm, from = "", to = "ASCII//TRANSLIT"))
-  i <- which(grepl(padrao, nm_norm))[1]
-  if (is.na(i)) stop("Não achei coluna '", novo_nome, "'. Colunas: ", paste(nm, collapse = ", "))
-  dplyr::rename(df, !!novo_nome := !!rlang::sym(nm[i]))
-}
-
-prep_base_orgao <- function(df, ano) {
-  df |>
-    pad_col("subpref", "subprefeitura") |>
-    pad_col("sigla.*org|org.*sigla", "sigla_orgao") |>
-    pad_col("valor|vlr", "valor_detalhamento_acao") |>
+  df %>%
     dplyr::transmute(
-      subprefeitura,
-      sigla_orgao,
-      valor_detalhamento_acao = as.numeric(valor_detalhamento_acao),
+      subprefeitura = .data[[col_sub]],
+      sigla_orgao   = .data[[col_org]],
+      valor_detalhamento_acao = suppressWarnings(as.numeric(.data[[col_vlr]])),
       ano = ano
     )
 }
 
 base_orgao <- dplyr::bind_rows(
-  prep_base_orgao(basedadosDA_2022, 2022),
-  prep_base_orgao(basedadosDA_2023, 2023),
-  prep_base_orgao(basedadosDA_2024, 2024),
-  prep_base_orgao(basedadosDA_2025, 2025)
+  pegar_base(arquivo_2022, 2022),
+  pegar_base(arquivo_2023, 2023),
+  pegar_base(arquivo_2024, 2024),
+  pegar_base(arquivo_2025, 2025)
 )
 
-
-# 3) Tabela: quanto cada órgão gastou em cada subprefeitura (e o % dentro da subprefeitura)
 gasto_orgao_reg <- base_orgao %>%
   dplyr::group_by(subprefeitura, sigla_orgao) %>%
   dplyr::summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") %>%
@@ -1313,7 +1248,6 @@ gasto_orgao_reg <- base_orgao %>%
   ) %>%
   dplyr::ungroup()
 
-# 4) Versão “para gráfico”: junta tudo que for <4% em "Outros" e recalcula o %
 graf_orgao_sub <- gasto_orgao_reg %>%
   dplyr::mutate(sigla_orgao = dplyr::if_else(percentual < 4, "Outros", sigla_orgao)) %>%
   dplyr::group_by(subprefeitura, sigla_orgao) %>%
@@ -1324,13 +1258,13 @@ graf_orgao_sub <- gasto_orgao_reg %>%
     percentual = round((valor / total_subpref) * 100, 2)
   ) %>%
   dplyr::ungroup()
-
 ```
 
 
 
+
 # Fazendo tabela para gráfico no anexo
-```{r graf_orgao_sub, message=FALSE, warning=FALSE}
+```{r graf_orgao_sub, echo=FALSE, message=FALSE, warning=FALSE}
 # Fazendo tabela para gráfico no anexo
 graf_orgao_sub <- gasto_orgao_reg %>%
   dplyr::mutate(sigla_orgao = dplyr::if_else(percentual < 4, "Outros", sigla_orgao)) %>%
@@ -1427,7 +1361,7 @@ cat("✅ Arquivos geoespaciais exportados.\n")
 
 ## Conclusão
 
-```{r conclusao}
+```{r conclusao, echo=TRUE}
 cat("===========================================================\n")
 cat("  IDRGP 2022–2025 — Relatório concluído com sucesso.\n")
 cat("===========================================================\n\n")
@@ -1440,6 +1374,6 @@ cat("  Método estatístico:  ", toupper(metodo_estatistico), "\n")
 cat("  p-valor:             ", formatC(teste_principal$p.value, format = "e", digits = 2), "\n")
 cat("  IC 95%:              [", round(ic_inf, 6), ";", round(ic_sup, 6), "]\n\n")
 cat("  Produtos em:", pasta_saida, "\n")
-cat("  Elaboração: SEPLAN/CPMA — Prefeitura de São Paulo.\n")
+cat("  Elaboração: SEPLAN/SIME/CPMA — Prefeitura de São Paulo, maio de 2026.\n")
 cat("===========================================================\n")
 ```
