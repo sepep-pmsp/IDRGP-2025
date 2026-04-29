@@ -298,6 +298,13 @@ detectar_sheet <- function(arquivo, ano) {
   if (any(match)) sheets[which(match)[1]] else sheets[1]
 }
 
+
+# Bases detalhadas (para tabelas por órgão, quando necessário)
+basedadosDA_2022 <- readxl::read_xlsx(arquivo_2022)
+basedadosDA_2023 <- readxl::read_xlsx(arquivo_2023)
+basedadosDA_2024 <- readxl::read_xlsx(arquivo_2024)
+basedadosDA_2025 <- readxl::read_xlsx(arquivo_2025)
+
 padronizar_subprefeitura <- function(x) {
   x <- as.character(x)
   x <- str_replace_all(x, "^Subprefeitura de ", "")
@@ -427,8 +434,8 @@ limpar_orcamento <- function(arquivo, ano, sheet = 1) {
 
 ## Processamento dos 4 anos
 
-```{r processamento_anos_2025_2025, echo=FALSE, message=FALSE, warning=FALSE}
 
+```{r processamento_22_23_24_25, echo=FALSE, message=FALSE, warning=FALSE}
 # Detecta a aba correta para cada arquivo
 detectar_sheet <- function(arquivo, ano) {
   sheets <- readxl::excel_sheets(arquivo)
@@ -643,7 +650,8 @@ integrar_idrgp_ano <- function(df_agr_ano, ano_ref, subprefeitura_sf, df_idrgp) 
 
 Este chunk faz o “trabalho pesado” uma única vez e guarda tudo em listas fáceis de usar.
 
-```{r prepara_listas, echo=FALSE, message=FALSE, warning=FALSE}
+
+```{r, message=FALSE, warning=FALSE}
 # 1) Regionalização por ação, por ano
 df_reg <- purrr::imap_dfr(arquivos, function(arq, ano_chr) {
   ano <- as.integer(ano_chr)
@@ -914,6 +922,60 @@ cat("✅ Teste do ciclo:", toupper(metodo_estatistico_ciclo),
     "| KS p =", formatC(teste_ks_ciclo$p.value, format="e", digits=2),
     "| IC 95% [", round(ic_inf_ciclo, 6), ";", round(ic_sup_ciclo, 6), "]\n")
 ```
+
+## Preparação (gera tudo em listas)
+
+Este chunk faz o “trabalho pesado” uma única vez e guarda tudo em listas fáceis de usar.
+
+```{r prepara_listas, message=FALSE, warning=FALSE}
+# 1) Regionalização por ação, por ano
+df_reg <- purrr::imap_dfr(arquivos, function(arq, ano_chr) {
+  ano <- as.integer(ano_chr)
+  aba <- detectar_sheet(arq, ano)
+  resumo_regionalizacao(arq, ano, aba)
+})
+
+reg_por_ano <- split(df_reg, df_reg$ano)
+
+# 2) IDRGP por ano (teste + classificação)
+idrgp_por_ano <- purrr::imap(agrs, function(df_agr_ano, ano_chr) {
+  integrar_idrgp_ano(df_agr_ano, as.integer(ano_chr), subprefeitura_sf, df_idrgp)
+})
+
+# (Opcional) expõe variáveis “amigáveis” no ambiente: idrgp_2022, idrgp_2023
+purrr::iwalk(idrgp_por_ano, function(res, ano_chr) {
+  assign(paste0("idrgp_", ano_chr), res, envir = .GlobalEnv)
+})
+```
+
+## Resumo geral da regionalização (por ano)
+
+```{r resumo_regionalizacao_ano_v2, message=FALSE, warning=FALSE}
+resumo_reg_ano <- df_reg |>
+  group_by(ano) |>
+  summarise(
+    valor_total = sum(valor_total, na.rm = TRUE),
+    valor_regionalizado = sum(valor_regionalizado, na.rm = TRUE),
+    perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  resumo_reg_ano |>
+    mutate(
+      valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+      valor_regionalizado = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_regionalizado),
+      perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
+    ),
+  col.names = c("Ano","Valor total","Valor regionalizado","% regionalizado"),
+  caption = "Regionalização do orçamento (por valor) — resumo por ano"
+)
+```
+
+
+
+
+>>>>>>> Stashed changes
 # Mapas - estrutura
 
 ```{r config_mapas, echo=FALSE}
@@ -949,7 +1011,11 @@ gerar_mapa <- function(sf_data, col_status, titulo, nota = "") {
 
 ## Mapas 2022, 2023 e 2024 individuais  com o status quanto ao IDRGP com a Variação de 30% [status_var_percentual (±30%): classifica cada subprefeitura pelo tamanho do desvio relativo ao alvo: (real − alvo) / alvo. Se passar de +0.30 vira “Acima”, abaixo de −0.30 vira “Abaixo”, senão “Dentro”. É um corte fixo e arbitrário (muda bastante se você trocar 30% por 20%/40%), e pode ficar “estranho” quando idrgp_alvo é muito pequeno ou zero (o percentual explode/precisa de regra especial).]
 
-```{r mapas_hist_2022_2025, echo=FALSE, fig.height=10, fig.width=12}
+
+
+
+```{r mapas_hist_2022_2023_2024, echo=FALSE, fig.height=10, fig.width=12}
+
 preparar_sf <- function(int_data) {
   subprefeitura_sf |>
     left_join(int_data |> select(join_key, status), by = "join_key")
@@ -989,8 +1055,6 @@ mapa3 <- gerar_mapa(preparar_sf_ano(2024), "status",
 
 print(mapa1); print(mapa2); print(mapa3)
 ```
-
-
 
 
 
@@ -1206,8 +1270,10 @@ tabela_gasto_sub<- gasto_reg %>%
   group_by(subprefeitura) %>% 
   slice_max(order_by = valor, n = 10)
 ```
+
+
 ```{r tabela_orgao_2022_2025, echo=FALSE, message=FALSE, warning=FALSE}
-# Lê e padroniza só o que importa (subprefeitura, órgão, valor)
+# Segunda tabela - primeiro, lê e padroniza só o que importa (subprefeitura, órgão, valor)
 pegar_base <- function(arq, ano) {
   df <- readxl::read_xlsx(arq)
 
@@ -1259,8 +1325,6 @@ graf_orgao_sub <- gasto_orgao_reg %>%
   ) %>%
   dplyr::ungroup()
 ```
-
-
 
 
 # Fazendo tabela para gráfico no anexo
@@ -1361,14 +1425,18 @@ cat("✅ Arquivos geoespaciais exportados.\n")
 
 ## Conclusão
 
-```{r conclusao, echo=TRUE}
+
+```{r conclusao, message=FALSE, warning=FALSE}
+res_2025 <- if (exists("res_2025")) res_2025 else idrgp_por_ano[["2025"]]
+total_valor <- res_2025$total_valor
+
 cat("===========================================================\n")
 cat("  IDRGP 2022–2025 — Relatório concluído com sucesso.\n")
 cat("===========================================================\n\n")
 cat("  Ciclo analisado:      2022 a 2025\n")
 cat("  Valor 2025:           R$", format(total_valor, big.mark = ".", decimal.mark = ","), "\n")
 cat("  Total ciclo:          R$", format(sum(df_ciclo$valor_2022_a_2025),
-                                          big.mark = ".", decimal.mark = ","), "\n")
+                                         big.mark = ".", decimal.mark = ","), "\n")
 cat("  Subprefeituras:       32\n")
 cat("  Método estatístico:  ", toupper(metodo_estatistico), "\n")
 cat("  p-valor:             ", formatC(teste_principal$p.value, format = "e", digits = 2), "\n")
@@ -1376,4 +1444,4 @@ cat("  IC 95%:              [", round(ic_inf, 6), ";", round(ic_sup, 6), "]\n\n"
 cat("  Produtos em:", pasta_saida, "\n")
 cat("  Elaboração: SEPLAN/SIME/CPMA — Prefeitura de São Paulo, maio de 2026.\n")
 cat("===========================================================\n")
-```
+
