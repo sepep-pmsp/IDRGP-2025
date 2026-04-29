@@ -940,7 +940,7 @@ print(mapa1); print(mapa2); print(mapa3)
 
 
 
-## Mapa 2025
+## Mapa 2025 - status estatístico adotado
 
 ```{r mapa_2025, fig.width=12, fig.height=10}
 mapa4 <- gerar_mapa(df_integrado, "status_estatistico",
@@ -953,12 +953,43 @@ print(mapa4)
 ## Mapa Agregado 2022–2025
 
 ```{r mapa_ciclo, fig.width=12, fig.height=10}
-mapa5 <- gerar_mapa(df_ciclo_sf, "status_ciclo",
+# garante a diferença no próprio sf
+if (!"idrgp_diferenca_ciclo" %in% names(df_ciclo_sf)) {
+  df_ciclo_sf <- df_ciclo_sf |>
+    dplyr::mutate(idrgp_diferenca_ciclo = idrgp_real_2022_a_2025 - idrgp_alvo)
+}
+
+# cria o status estatístico (IC 95%)
+df_ciclo_sf <- df_ciclo_sf |>
+  dplyr::mutate(
+    status_ciclo_estatistico = dplyr::case_when(
+      idrgp_diferenca_ciclo < ic_inf_ciclo ~ "Abaixo do IDRGP Alvo",
+      idrgp_diferenca_ciclo > ic_sup_ciclo ~ "Acima do IDRGP Alvo",
+      TRUE ~ "Dentro do IDRGP Alvo"
+    ),
+    status_ciclo_estatistico = factor(
+      status_ciclo_estatistico,
+      levels = c("Abaixo do IDRGP Alvo", "Dentro do IDRGP Alvo", "Acima do IDRGP Alvo")
+    )
+  )
+
+legenda_ciclo <- paste0(
+  "KS p=", formatC(teste_ks_ciclo$p.value, format="e", digits=2),
+  " | ", toupper(metodo_estatistico_ciclo),
+  " p=", formatC(teste_principal_ciclo$p.value, format="e", digits=2),
+  " | IC 95% (real - alvo): [", round(ic_inf_ciclo, 5), "; ", round(ic_sup_ciclo, 5), "]."
+)
+
+mapa5 <- gerar_mapa(
+  df_ciclo_sf, "status_ciclo_estatistico",
   "IDRGP Agregado 2022–2025 — Balanço do Ciclo PPA",
-  "Variação percentual (±30%) do IDRGP Real acumulado.")
+  legenda_ciclo
+)
+
 print(mapa5)
 cat("✅ 5 mapas gerados.\n")
 ```
+
 
 # Gráficos
 
@@ -1017,20 +1048,38 @@ print(grafico2)
 ## G3 — IDRGP 2025: Valores Absolutos (R\$)
 
 ```{r grafico3, fig.width=14, fig.height=12}
-grafico3 <- ggplot(df_integrado, aes(y = reorder(subprefeitura, idrgp_alvo))) +
-  geom_col(aes(x = valor, fill = status_valor), width = 0.65, alpha = 0.9) +
+df_plot <- df_integrado |>
+  dplyr::mutate(
+    status_valor_plot = dplyr::recode(
+      status_valor,
+      "Valor previsto (R$) superado" = "Valor previsto (R$) atingido"
+    )
+  )
+
+grafico3 <- ggplot(df_plot, aes(y = reorder(subprefeitura, idrgp_alvo))) +
+  geom_col(aes(x = valor, fill = status_valor_plot), width = 0.65, alpha = 0.9) +
   geom_point(aes(x = valor_previsto, shape = "Valor Previsto (R$)"),
              color = "#c0392b", size = 3) +
-  scale_fill_manual(values = c(
-    "Valor previsto (R$) atingido"     = "#1A1442",
-    "Valor previsto (R$) não atingido" = "#d97a0f"), name = "Status:") +
+  scale_fill_manual(
+    values = c(
+      "Valor previsto (R$) atingido"     = "#1A1442",  # azul escuro
+      "Valor previsto (R$) não atingido" = "#d97a0f"
+    ),
+    name = "Status:",
+    drop = FALSE
+  ) +
   scale_shape_manual(values = c("Valor Previsto (R$)" = 18), name = "") +
-  guides(fill = guide_legend(order = 1),
-         shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)) +
+  guides(
+    fill  = guide_legend(order = 1),
+    shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)
+  ) +
   scale_x_continuous(labels = scales::label_number(
-    scale_cut = scales::cut_short_scale(), prefix = "R$ ", decimal.mark = ",")) +
-  labs(title = "IDRGP 2025 — Valor Previsto e Executado por Subprefeitura (R$)",
-       x = "Valor executado (R$)", y = NULL, caption = caption_base) +
+    scale_cut = scales::cut_short_scale(), prefix = "R$ ", decimal.mark = ","
+  )) +
+  labs(
+    title = "IDRGP 2025 — Valor Previsto e Executado por Subprefeitura (R$)",
+    x = "Valor executado (R$)", y = NULL, caption = caption_base
+  ) +
   tema_barras
 
 print(grafico3)
@@ -1091,7 +1140,7 @@ cat("Valor total:", format(sum(df_anexo$valor_liquidado), big.mark = ".", decima
 ## Tabelas para 2022-2025
 
 - Uma tabela para os 10 maiores proj/ativ e valor por sub
-- Uma tablea por sub com a distribuição dos maiores gastos por órgão
+- Uma tabelea por sub com a distribuição dos maiores gastos por órgão
 
 ```{r}
 #Primeira tabela
@@ -1104,31 +1153,88 @@ tabela_gasto_sub<- gasto_reg %>%
   slice_max(order_by = valor, n = 10)
 ```
 
-```{r}
-# Segunda tabela
-gasto_orgao_reg <- rbind(df_2022, df_2023, df_2024, df_2025) %>% 
-  group_by(subprefeitura, sigla_orgao) %>% 
-  summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") %>% 
-  group_by(subprefeitura) %>% 
-  mutate(
-    total_subpref = sum(valor),
-    percentual = ((valor / total_subpref)*100),
-    percentual = paste0(round(percentual, 2)),
-    percentual = as.numeric(percentual)
-  )
+```{r tabela_orgao_2022_2025, message=FALSE, warning=FALSE}
+# 1) Função: padroniza o nome da coluna "Sigla do órgão"
+pad_sigla_orgao <- function(df) {
+  nm <- names(df)
+  nm_norm <- tolower(iconv(nm, from = "", to = "ASCII//TRANSLIT"))
+
+  i <- which(grepl("sigla", nm_norm) & grepl("org", nm_norm))[1]
+  if (is.na(i)) stop("Não achei coluna de sigla do órgão. Colunas: ", paste(nm, collapse = ", "))
+
+  dplyr::rename(df, sigla_orgao = !!rlang::sym(nm[i]))
+}
+
+# 2) Junta 2022–2025 (já padronizando a sigla do órgão)
+pad_col <- function(df, padrao, novo_nome) {
+  nm <- names(df)
+  nm_norm <- tolower(iconv(nm, from = "", to = "ASCII//TRANSLIT"))
+  i <- which(grepl(padrao, nm_norm))[1]
+  if (is.na(i)) stop("Não achei coluna '", novo_nome, "'. Colunas: ", paste(nm, collapse = ", "))
+  dplyr::rename(df, !!novo_nome := !!rlang::sym(nm[i]))
+}
+
+prep_base_orgao <- function(df, ano) {
+  df |>
+    pad_col("subpref", "subprefeitura") |>
+    pad_col("sigla.*org|org.*sigla", "sigla_orgao") |>
+    pad_col("valor|vlr", "valor_detalhamento_acao") |>
+    dplyr::transmute(
+      subprefeitura,
+      sigla_orgao,
+      valor_detalhamento_acao = as.numeric(valor_detalhamento_acao),
+      ano = ano
+    )
+}
+
+base_orgao <- dplyr::bind_rows(
+  prep_base_orgao(basedadosDA_2022, 2022),
+  prep_base_orgao(basedadosDA_2023, 2023),
+  prep_base_orgao(basedadosDA_2024, 2024),
+  prep_base_orgao(basedadosDA_2025, 2025)
+)
+
+
+# 3) Tabela: quanto cada órgão gastou em cada subprefeitura (e o % dentro da subprefeitura)
+gasto_orgao_reg <- base_orgao %>%
+  dplyr::group_by(subprefeitura, sigla_orgao) %>%
+  dplyr::summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") %>%
+  dplyr::group_by(subprefeitura) %>%
+  dplyr::mutate(
+    total_subpref = sum(valor, na.rm = TRUE),
+    percentual = round((valor / total_subpref) * 100, 2)
+  ) %>%
+  dplyr::ungroup()
+
+# 4) Versão “para gráfico”: junta tudo que for <4% em "Outros" e recalcula o %
+graf_orgao_sub <- gasto_orgao_reg %>%
+  dplyr::mutate(sigla_orgao = dplyr::if_else(percentual < 4, "Outros", sigla_orgao)) %>%
+  dplyr::group_by(subprefeitura, sigla_orgao) %>%
+  dplyr::summarise(valor = sum(valor, na.rm = TRUE), .groups = "drop") %>%
+  dplyr::group_by(subprefeitura) %>%
+  dplyr::mutate(
+    total_subpref = sum(valor, na.rm = TRUE),
+    percentual = round((valor / total_subpref) * 100, 2)
+  ) %>%
+  dplyr::ungroup()
+
+```
+
+
+
 # Fazendo tabela para gráfico no anexo
-graf_orgao_sub<- gasto_orgao_reg %>% 
-  mutate(sigla_orgao = if_else(percentual < 4, "Outros", sigla_orgao)) %>% 
-  group_by(subprefeitura, sigla_orgao) %>% 
-  summarise(valor = sum(valor), .groups = "drop") %>%
-  group_by(subprefeitura) %>% 
-  mutate(
-    total_subpref = sum(valor),
-    percentual = (valor / total_subpref) * 100,
-    percentual = round(percentual, 2)
-  )
-
-
+```{r graf_orgao_sub, message=FALSE, warning=FALSE}
+# Fazendo tabela para gráfico no anexo
+graf_orgao_sub <- gasto_orgao_reg %>%
+  dplyr::mutate(sigla_orgao = dplyr::if_else(percentual < 4, "Outros", sigla_orgao)) %>%
+  dplyr::group_by(subprefeitura, sigla_orgao) %>%
+  dplyr::summarise(valor = sum(valor, na.rm = TRUE), .groups = "drop") %>%
+  dplyr::group_by(subprefeitura) %>%
+  dplyr::mutate(
+    total_subpref = sum(valor, na.rm = TRUE),
+    percentual = round((valor / total_subpref) * 100, 2)
+  ) %>%
+  dplyr::ungroup()
 ```
 
 ## Exportação de mapas e gráficos
