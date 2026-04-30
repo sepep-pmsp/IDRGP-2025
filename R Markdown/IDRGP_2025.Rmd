@@ -181,7 +181,6 @@ df_idrgp <- readxl::read_excel(arquivo_ivu) |>
 
 ## Controles de qualidade
 
-## suprimir
 
 ```{r controle_idrgp, echo=FALSE}
 # A soma do IDRGP Alvo deve ser igual a 1 (100%)
@@ -923,59 +922,8 @@ cat("✅ Teste do ciclo:", toupper(metodo_estatistico_ciclo),
     "| IC 95% [", round(ic_inf_ciclo, 6), ";", round(ic_sup_ciclo, 6), "]\n")
 ```
 
-## Preparação (gera tudo em listas)
-
-Este chunk faz o “trabalho pesado” uma única vez e guarda tudo em listas fáceis de usar.
-
-```{r prepara_listas, message=FALSE, warning=FALSE}
-# 1) Regionalização por ação, por ano
-df_reg <- purrr::imap_dfr(arquivos, function(arq, ano_chr) {
-  ano <- as.integer(ano_chr)
-  aba <- detectar_sheet(arq, ano)
-  resumo_regionalizacao(arq, ano, aba)
-})
-
-reg_por_ano <- split(df_reg, df_reg$ano)
-
-# 2) IDRGP por ano (teste + classificação)
-idrgp_por_ano <- purrr::imap(agrs, function(df_agr_ano, ano_chr) {
-  integrar_idrgp_ano(df_agr_ano, as.integer(ano_chr), subprefeitura_sf, df_idrgp)
-})
-
-# (Opcional) expõe variáveis “amigáveis” no ambiente: idrgp_2022, idrgp_2023
-purrr::iwalk(idrgp_por_ano, function(res, ano_chr) {
-  assign(paste0("idrgp_", ano_chr), res, envir = .GlobalEnv)
-})
-```
-
-## Resumo geral da regionalização (por ano)
-
-```{r resumo_regionalizacao_ano_v2, message=FALSE, warning=FALSE}
-resumo_reg_ano <- df_reg |>
-  group_by(ano) |>
-  summarise(
-    valor_total = sum(valor_total, na.rm = TRUE),
-    valor_regionalizado = sum(valor_regionalizado, na.rm = TRUE),
-    perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_),
-    .groups = "drop"
-  )
-
-knitr::kable(
-  resumo_reg_ano |>
-    mutate(
-      valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
-      valor_regionalizado = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_regionalizado),
-      perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
-    ),
-  col.names = c("Ano","Valor total","Valor regionalizado","% regionalizado"),
-  caption = "Regionalização do orçamento (por valor) — resumo por ano"
-)
-```
 
 
-
-
->>>>>>> Stashed changes
 # Mapas - estrutura
 
 ```{r config_mapas, echo=FALSE}
@@ -1422,6 +1370,280 @@ st_write(df_shp, dsn = pasta_saida,
 
 cat("✅ Arquivos geoespaciais exportados.\n")
 ```
+
+
+##teste de visualização das informações das ações e projetos nas subprefeituras - aqui ainda estamos em teste pq tem uma variação dificil de explicitar aqui; 
+
+```{r graficos_processos_subprefeituras, message=FALSE, warning=FALSE}
+# ============================================================================
+# Gráficos: processos (ações) por órgão, 1 gráfico por subprefeitura (32)
+# - Empilhado horizontal
+# - Usa apenas siglas pré-definidas + "Outros" (explicado na legenda)
+# - Cada secretaria/órgão tem UMA cor fixa (bem contrastante), dialogando com a identidade
+# - Exporta PNGs EXATAMENTE em:
+#   C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown/resultados/graficos_processos_subprefeituras
+# ============================================================================
+
+# --- parâmetros ---
+anos_processos <- 2022:2025
+top_n_legenda  <- 12
+min_pct_outros <- 0.01
+
+pasta_out <- "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown/resultados/graficos_processos_subprefeituras"
+
+# --- checagens ---
+if (!exists("df_siglas")) stop("Objeto `df_siglas` não encontrado (chunk df_siglas).")
+if (!exists("detectar_sheet")) stop("Função `detectar_sheet` não encontrada (chunk funcoes_orcamento).")
+if (!exists("padronizar_subprefeitura")) stop("Função `padronizar_subprefeitura` não encontrada (chunk funcoes_orcamento).")
+if (!exists("norm_name")) stop("Função `norm_name` não encontrada (chunk funcao_norm_name).")
+if (!exists("arquivo_2022") || !exists("arquivo_2023") || !exists("arquivo_2024") || !exists("arquivo_2025")) {
+  stop("Arquivos 2022–2025 não encontrados (chunk caminhos).")
+}
+
+detectar_coluna <- function(df, candidatos) {
+  hit <- candidatos[candidatos %in% names(df)][1]
+  if (is.na(hit) || length(hit) == 0) NA_character_ else hit
+}
+
+normalizar_sigla_orgao <- function(x) {
+  x <- stringr::str_squish(as.character(x))
+  x <- dplyr::na_if(x, "")
+  x <- dplyr::recode(x,
+    "SP PARCERIAS" = "SP Parcerias",
+    "SP_PARCEIRAS" = "SP Parcerias",
+    "SPParcerias"  = "SP Parcerias",
+    "CASA CIVIL"   = "Casa Civil",
+    .default = x
+  )
+  x
+}
+
+orgaos_permitidos <- c(
+  "Casa Civil",
+  "SMADS","SMC","SMDET","SMDHC","SME","SEME","SEGES","SEHAB","SMIT","SMJ","SEL","SMUL",
+  "SMT","SP Parcerias","SMPED","SMRI","SMS","SMSU","SMSUB","SMTUR","SVMA","SF","SGM","CGM"
+)
+
+outros_label <- paste0(
+  "Outros (demais órgãos fora da lista e/ou com participação < ",
+  format(round(min_pct_outros * 100, 1), nsmall = 1), "% na subprefeitura, ",
+  "e/ou além do Top ", top_n_legenda, " por subprefeitura)"
+)
+
+# paleta fixa: 1 cor por secretaria/órgão (todas diferentes e contrastantes)
+pal_orgao <- c(
+  "Casa Civil"    = "#1A1442",
+
+  "SMADS"         = "#2E86AB",
+  "SMC"           = "#7A3DB8",
+  "SMDET"         = "#D97A0F",
+  "SMDHC"         = "#D64550",
+  "SME"           = "#0EA1CF",
+  "SEME"          = "#2DBE7E",
+  "SEGES"         = "#546A7B",
+  "SEHAB"         = "#9B59B6",
+  "SMIT"          = "#00A8A8",
+  "SMJ"           = "#8E6C88",
+  "SEL"           = "#4C78A8",
+  "SMUL"          = "#E45756",
+
+  "SMT"           = "#F2A541",
+  "SP Parcerias"  = "#6F4E37",
+  "SMPED"         = "#1F77B4",
+  "SMRI"          = "#17A589",
+  "SMS"           = "#C0392B",
+  "SMSU"          = "#34495E",
+  "SMSUB"         = "#5DADE2",
+  "SMTUR"         = "#E67E22",
+  "SVMA"          = "#2E7D32",
+  "SF"            = "#8E44AD",
+  "SGM"           = "#16A085",
+  "CGM"           = "#7F8C8D"
+)
+
+# adiciona a cor do "Outros (...)" (sem usar :=)
+pal_orgao <- c(pal_orgao, stats::setNames("#9E9E9E", outros_label))
+
+# garante que todo permitido tem cor (fallback se algo faltar)
+faltando <- setdiff(orgaos_permitidos, names(pal_orgao))
+if (length(faltando) > 0) {
+  extra <- grDevices::hcl(
+    h = seq(15, 345, length.out = length(faltando) + 1)[1:length(faltando)],
+    c = 75, l = 50
+  )
+  names(extra) <- faltando
+  pal_orgao <- c(pal_orgao, extra)
+}
+
+ler_base_processos <- function(arquivo, ano) {
+  aba <- detectar_sheet(arquivo, ano)
+  df0 <- readxl::read_excel(arquivo, sheet = aba) |>
+    janitor::clean_names()
+
+  col_sub  <- detectar_coluna(df0, c("subprefeitura"))
+  col_org  <- detectar_coluna(df0, c("sigla_orgao","sigla_orgao_responsavel","sigla_orgao_resp","sigla_do_orgao","orgao","orgao_responsavel"))
+  col_acao <- detectar_coluna(df0, c("descricao_proj_ativ","descricao_projeto_atividade","descricao_acao","projeto_atividade","projeto_ativ"))
+  col_val  <- if (exists("coluna_valor_orc")) coluna_valor_orc(df0) else detectar_coluna(df0, c("valor_detalhamento_acao","valor_detalhamento_a_cao"))
+
+  if (is.na(col_sub)) stop("Não achei coluna de subprefeitura em: ", basename(arquivo))
+  if (is.na(col_org)) stop("Não achei coluna de órgão/sigla_orgao em: ", basename(arquivo))
+  if (is.na(col_acao)) stop("Não achei coluna de descricao_proj_ativ (ação) em: ", basename(arquivo))
+  if (is.na(col_val)) stop("Não achei coluna de valor em: ", basename(arquivo))
+
+  df0 |>
+    dplyr::transmute(
+      ano = as.integer(ano),
+      subprefeitura = padronizar_subprefeitura(.data[[col_sub]]),
+      subpref_key   = norm_name(padronizar_subprefeitura(.data[[col_sub]])),
+      sigla_orgao   = normalizar_sigla_orgao(.data[[col_org]]),
+      acao          = stringr::str_squish(as.character(.data[[col_acao]])),
+      valor         = as.numeric(.data[[col_val]])
+    ) |>
+    dplyr::filter(
+      !is.na(subprefeitura), subprefeitura != "",
+      !stringr::str_detect(subprefeitura, "Supra"),
+      !is.na(subpref_key), subpref_key != "",
+      !is.na(sigla_orgao), sigla_orgao != "",
+      !is.na(acao), acao != ""
+    )
+}
+
+arquivos_anos <- c("2022" = arquivo_2022, "2023" = arquivo_2023, "2024" = arquivo_2024, "2025" = arquivo_2025)
+
+df_proc <- purrr::map_dfr(
+  anos_processos,
+  ~ ler_base_processos(arquivos_anos[as.character(.x)], .x)
+)
+
+df_proc <- df_proc |>
+  dplyr::mutate(sigla_orgao = dplyr::if_else(sigla_orgao %in% orgaos_permitidos, sigla_orgao, "Outros"))
+
+df_sum <- df_proc |>
+  dplyr::group_by(subpref_key, sigla_orgao) |>
+  dplyr::summarise(
+    n_processos = dplyr::n_distinct(acao),
+    valor_total = sum(valor, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  dplyr::filter(n_processos > 0)
+
+df_siglas_key <- df_siglas |>
+  dplyr::mutate(subpref_key = norm_name(subprefeitura))
+
+subprefs_key <- df_siglas_key$subpref_key
+
+if (!dir.exists(pasta_out)) dir.create(pasta_out, recursive = TRUE)
+
+tema_local <- if (exists("tema_barras")) tema_barras else ggplot2::theme_minimal(base_size = 12)
+
+plot_subpref <- function(subpref_key) {
+  nome_legivel <- df_siglas_key$subprefeitura[match(subpref_key, df_siglas_key$subpref_key)]
+
+  dfp <- df_sum |>
+    dplyr::filter(subpref_key == !!subpref_key) |>
+    dplyr::mutate(sigla_orgao = as.character(sigla_orgao))
+
+  if (nrow(dfp) == 0) return(NULL)
+
+  total_sub <- sum(dfp$n_processos, na.rm = TRUE)
+
+  dfp <- dfp |>
+    dplyr::mutate(
+      pct = ifelse(total_sub > 0, n_processos / total_sub, 0),
+      sigla_orgao = dplyr::if_else(sigla_orgao != "Outros" & pct < min_pct_outros, "Outros", sigla_orgao)
+    ) |>
+    dplyr::group_by(sigla_orgao) |>
+    dplyr::summarise(n_processos = sum(n_processos), .groups = "drop")
+
+  dfp <- dfp |>
+    dplyr::arrange(dplyr::desc(n_processos)) |>
+    dplyr::mutate(rank = dplyr::row_number()) |>
+    dplyr::mutate(sigla_orgao = dplyr::if_else(sigla_orgao != "Outros" & rank > top_n_legenda, "Outros", sigla_orgao)) |>
+    dplyr::group_by(sigla_orgao) |>
+    dplyr::summarise(n_processos = sum(n_processos), .groups = "drop")
+
+  dfp <- dfp |>
+    dplyr::mutate(sigla_orgao = dplyr::if_else(sigla_orgao == "Outros", outros_label, sigla_orgao))
+
+  levels_leg <- c(orgaos_permitidos, outros_label)
+
+  dfp <- dfp |>
+    dplyr::mutate(sigla_orgao = factor(sigla_orgao, levels = levels_leg))
+
+  anos_txt <- paste(range(anos_processos), collapse = "–")
+
+  ggplot2::ggplot(dfp, ggplot2::aes(y = " ", x = n_processos, fill = sigla_orgao)) +
+    ggplot2::geom_col(width = 0.72, alpha = 0.96) +
+    ggplot2::scale_fill_manual(values = pal_orgao, drop = TRUE, name = "Órgão") +
+    ggplot2::scale_x_continuous(breaks = scales::breaks_pretty(n = 6)) +
+    ggplot2::labs(
+      title = paste0("Processos do orçamento regionalizado por órgão — ", nome_legivel),
+      subtitle = paste0("Quantidade de ações distintas (", anos_txt, ") | Total: ", sum(dfp$n_processos), " processos"),
+      x = "Quantidade de processos (ações)",
+      y = NULL,
+      caption = if (exists("caption_base")) caption_base else NULL
+    ) +
+    tema_local +
+    ggplot2::theme(
+      axis.text.y = ggplot2::element_blank(),
+      axis.ticks.y = ggplot2::element_blank(),
+      legend.position = "bottom",
+      legend.title = ggplot2::element_text(size = 10, face = "bold"),
+      legend.text  = ggplot2::element_text(size = 8),
+      legend.key.size = grid::unit(0.35, "cm")
+    ) +
+    ggplot2::guides(
+      fill = ggplot2::guide_legend(
+        nrow = 1,
+        byrow = TRUE,
+        override.aes = list(alpha = 1)
+      )
+    )
+}
+
+cat("WD:", getwd(), "\n")
+cat("pasta_out:", normalizePath(pasta_out, winslash = "/", mustWork = FALSE), "\n")
+cat("df_sum nrow:", nrow(df_sum), "\n")
+cat("df_sum subprefs (keys):", dplyr::n_distinct(df_sum$subpref_key), "\n")
+
+n_ok <- 0
+
+purrr::walk(subprefs_key, function(k) {
+  tryCatch({
+    p <- plot_subpref(k)
+    if (is.null(p)) return(invisible(NULL))
+
+    sig <- df_siglas_key$sigla[match(k, df_siglas_key$subpref_key)]
+    if (length(sig) != 1 || is.na(sig) || sig == "") sig <- k
+
+    arq <- file.path(pasta_out, paste0("processos_regionalizacao_", sig, ".png"))
+
+    ggplot2::ggsave(
+      filename = arq,
+      plot = p,
+      width = 14,
+      height = 4.8,
+      dpi = 300,
+      limitsize = FALSE
+    )
+
+    n_ok <<- n_ok + 1
+  }, error = function(e) {
+    nm <- df_siglas_key$subprefeitura[match(k, df_siglas_key$subpref_key)]
+    message("Erro ao exportar [", nm, "]: ", conditionMessage(e))
+  })
+})
+
+cat("✅ Gráficos exportados:", n_ok, "de", length(subprefs_key), "\n")
+cat("📁 Pasta:", pasta_out, "\n")
+```
+
+
+
+
+
+
+
 
 ## Conclusão
 
