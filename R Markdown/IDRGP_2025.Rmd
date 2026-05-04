@@ -36,10 +36,15 @@ library(readxl)      # leitura de arquivos Excel
 library(janitor)     # padronização de nomes de colunas
 library(scales)      # formatação de eixos em gráficos
 library(writexl)     # exportação para Excel
-library(sf)          # dados geoespaciais e mapas
+library(sf)          # dados geoespaciais vetorias
+library(geobr)       # dados geoespaciais e mapas - BRASIL
 library(ggplot2)     # gráficos
 library(knitr)       # exibir tabelas
+library(dplyr)
+
 ```
+
+
 
 ## Funções auxiliares
 
@@ -743,21 +748,21 @@ imprimir_analise_ano <- function(ano) {
     caption = paste0("Resumo da regionalização por ação — ", ano)
   ) |> print()
 
-  top_nao_reg <- df_reg_ano |>
-    mutate(perc_nao_reg = 1 - perc_regionalizado) |>
-    filter(!is.na(perc_nao_reg)) |>
-    arrange(desc(perc_nao_reg), desc(valor_total)) |>
+  # --- TOP 15 MAIORES (mais regionalizadas), não as menores ---
+  top_reg <- df_reg_ano |>
+    filter(!is.na(perc_regionalizado)) |>
+    arrange(desc(perc_regionalizado), desc(valor_total)) |>
     slice_head(n = 15) |>
     mutate(
       valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
-      perc_nao_reg = label_percent(accuracy = 0.1)(perc_nao_reg)
+      perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
     ) |>
-    select(descricao_proj_ativ, valor_total, perc_nao_reg, n_subpref)
+    select(descricao_proj_ativ, valor_total, perc_regionalizado, n_subpref)
 
   knitr::kable(
-    top_nao_reg,
-    col.names = c("Projeto/atividade","Valor total","% não regionalizado","N subpref (regionalizado)"),
-    caption = paste0("Top 15 ações com menor regionalização (por valor) — ", ano)
+    top_reg,
+    col.names = c("Projeto/atividade","Valor total","% regionalizado","N subpref (regionalizado)"),
+    caption = paste0("Top 15 ações com MAIOR regionalização (por valor) — ", ano)
   ) |> print()
 
   # --- IDRGP + testes ---
@@ -784,6 +789,7 @@ imprimir_analise_ano <- function(ano) {
     caption = paste0("Classificação estatística (IC 95%) — ", ano)
   ) |> print()
 }
+
 ```
 
 ## Análise de 2022
@@ -1639,11 +1645,186 @@ cat("📁 Pasta:", pasta_out, "\n")
 ```
 
 
+## código alternativa se o empilhado na horizontal der errado 
+```{r conclusao, message=FALSE, warning=FALSE}
+# ============================================================================
+# Composição (4 gráficos) por subprefeitura (sem agrupamentos de órgãos)
+# - Barras vertical + barras horizontal + pie + donut
+# - Usa as mesmas bases já lidas (funções/objetos do seu script), mas RECRIA
+#   um df "full" sem colapsar em "Outros"
+# - Exporta PNGs em:
+#   C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown/resultados/graficos_composicao_subprefeituras_sem_agrupamentos
+# ============================================================================
 
+# --- checagens mínimas (reaproveita o que já existe no seu Rmd) ---
+if (!exists("df_siglas")) stop("Objeto `df_siglas` não encontrado (chunk df_siglas).")
+if (!exists("ler_base_processos")) stop("Função `ler_base_processos` não encontrada (chunk graficos_processos_subprefeituras).")
+if (!exists("arquivos_anos")) stop("Objeto `arquivos_anos` não encontrado (chunk graficos_processos_subprefeituras).")
+if (!exists("anos_processos")) stop("Objeto `anos_processos` não encontrado (chunk graficos_processos_subprefeituras).")
+if (!exists("norm_name")) stop("Função `norm_name` não encontrada (chunk funcao_norm_name).")
 
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(ggplot2)
+  library(scales)
+  library(gridExtra)
+  library(forcats)
+})
 
+# --- parâmetros (ajuste se quiser) ---
+pasta_out_comp <- "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown/resultados/graficos_composicao_subprefeituras_sem_agrupamentos"
+if (!dir.exists(pasta_out_comp)) dir.create(pasta_out_comp, recursive = TRUE)
 
+# métrica para barras (escolha 1):
+#   "n_processos"  -> quantidade de ações distintas
+#   "valor_total"  -> soma do orçamento (valor)
+metrica_barras <- "n_processos"
 
+# --- base FULL (sem colapsar órgãos em "Outros") ---
+df_proc_full <- purrr::map_dfr(
+  anos_processos,
+  ~ ler_base_processos(arquivos_anos[as.character(.x)], .x)
+)
+
+df_sum_full <- df_proc_full |>
+  dplyr::group_by(subpref_key, sigla_orgao) |>
+  dplyr::summarise(
+    n_processos = dplyr::n_distinct(acao),
+    valor_total = sum(valor, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  dplyr::filter(n_processos > 0)
+
+df_siglas_key_full <- df_siglas |>
+  dplyr::mutate(subpref_key = norm_name(subprefeitura))
+
+subprefs_key_full <- df_siglas_key_full$subpref_key
+
+# --- paleta fixa global (1 cor por órgão encontrado) ---
+orgaos_todos <- sort(unique(df_sum_full$sigla_orgao))
+
+pal_orgao_full <- if (exists("pal_orgao")) pal_orgao else c()
+faltando_full <- setdiff(orgaos_todos, names(pal_orgao_full))
+if (length(faltando_full) > 0) {
+  extra <- scales::hue_pal(l = 60, c = 100)(length(faltando_full))
+  names(extra) <- faltando_full
+  pal_orgao_full <- c(pal_orgao_full, extra)
+}
+
+tema_local_comp <- if (exists("tema_barras")) tema_barras else ggplot2::theme_bw(base_size = 11)
+
+plot_composicao_subpref <- function(k) {
+  nome_legivel <- df_siglas_key_full$subprefeitura[match(k, df_siglas_key_full$subpref_key)]
+  if (length(nome_legivel) != 1 || is.na(nome_legivel) || nome_legivel == "") nome_legivel <- k
+
+  dfp <- df_sum_full |>
+    dplyr::filter(subpref_key == !!k) |>
+    dplyr::mutate(sigla_orgao = as.character(sigla_orgao))
+
+  if (nrow(dfp) == 0) return(NULL)
+
+  if (!metrica_barras %in% c("n_processos", "valor_total")) stop("`metrica_barras` inválida.")
+  dfp <- dfp |>
+    dplyr::mutate(metrica = .data[[metrica_barras]])
+
+  total_m <- sum(dfp$metrica, na.rm = TRUE)
+  dfp <- dfp |>
+    dplyr::mutate(
+      prop = ifelse(total_m > 0, metrica / total_m, 0),
+      sigla_orgao = forcats::fct_reorder(sigla_orgao, metrica, .desc = TRUE)
+    )
+
+  anos_txt <- paste(range(anos_processos), collapse = "–")
+  subt <- if (metrica_barras == "n_processos") {
+    paste0("Qtd. de ações distintas (", anos_txt, ") | Total: ", sum(dfp$n_processos), " processos")
+  } else {
+    paste0(
+      "Soma do orçamento (", anos_txt, ") | Total: ",
+      scales::label_number(scale_cut = scales::cut_short_scale())(sum(dfp$valor_total, na.rm = TRUE))
+    )
+  }
+
+  g_bar_v <- ggplot2::ggplot(dfp, ggplot2::aes(x = sigla_orgao, y = metrica, fill = sigla_orgao)) +
+    ggplot2::geom_col(alpha = 0.95, show.legend = TRUE) +
+    ggplot2::scale_fill_manual(values = pal_orgao_full, limits = levels(dfp$sigla_orgao), drop = FALSE) +
+    ggplot2::scale_y_continuous(labels = scales::label_number(big.mark = ".", decimal.mark = ",")) +
+    ggplot2::labs(
+      title = paste0("Composição por órgão — ", nome_legivel),
+      subtitle = subt,
+      x = "Órgão",
+      y = ifelse(metrica_barras == "n_processos", "Processos (ações)", "Valor total"),
+      fill = "Órgão"
+    ) +
+    tema_local_comp +
+    ggplot2::theme(
+      legend.position = "bottom",
+      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, vjust = 1)
+    )
+
+  g_bar_h <- ggplot2::ggplot(dfp, ggplot2::aes(x = sigla_orgao, y = metrica, fill = sigla_orgao)) +
+    ggplot2::geom_col(alpha = 0.95, show.legend = TRUE) +
+    ggplot2::coord_flip() +
+    ggplot2::scale_fill_manual(values = pal_orgao_full, limits = levels(dfp$sigla_orgao), drop = FALSE) +
+    ggplot2::scale_y_continuous(labels = scales::label_number(big.mark = ".", decimal.mark = ",")) +
+    ggplot2::labs(
+      title = "Barras (horizontal)",
+      x = NULL,
+      y = ifelse(metrica_barras == "n_processos", "Processos (ações)", "Valor total"),
+      fill = "Órgão"
+    ) +
+    tema_local_comp +
+    ggplot2::theme(legend.position = "bottom")
+
+  g_pie <- ggplot2::ggplot(dfp, ggplot2::aes(x = "", y = prop, fill = sigla_orgao)) +
+    ggplot2::geom_col(color = "white", linewidth = 0.2, show.legend = TRUE) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = scales::label_percent(accuracy = 0.1)(prop)),
+      position = ggplot2::position_stack(vjust = 0.5),
+      color = "white",
+      size = 2.8
+    ) +
+    ggplot2::scale_fill_manual(values = pal_orgao_full, limits = levels(dfp$sigla_orgao), drop = FALSE) +
+    ggplot2::coord_polar(theta = "y", start = 0) +
+    ggplot2::theme_void() +
+    ggplot2::labs(title = "Pie (participação)", fill = "Órgão") +
+    ggplot2::theme(legend.position = "bottom")
+
+  g_donut <- ggplot2::ggplot(dfp, ggplot2::aes(x = 2, y = prop, fill = sigla_orgao)) +
+    ggplot2::geom_col(color = "white", linewidth = 0.2, show.legend = TRUE) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = scales::label_percent(accuracy = 0.1)(prop)),
+      position = ggplot2::position_stack(vjust = 0.5),
+      color = "white",
+      size = 2.4
+    ) +
+    ggplot2::scale_fill_manual(values = pal_orgao_full, limits = levels(dfp$sigla_orgao), drop = FALSE) +
+    ggplot2::coord_polar(theta = "y", start = 0) +
+    xlim(-0.5, 2.5) +
+    ggplot2::theme_void() +
+    ggplot2::labs(title = "Donut (participação)", fill = "Órgão") +
+    ggplot2::theme(legend.position = "bottom")
+
+  gridExtra::arrangeGrob(g_bar_v, g_bar_h, g_pie, g_donut, nrow = 2)
+}
+
+n_ok_comp <- 0
+
+purrr::walk(subprefs_key_full, function(k) {
+  g <- tryCatch(plot_composicao_subpref(k), error = function(e) { message("Erro [", k, "]: ", conditionMessage(e)); NULL })
+  if (is.null(g)) return(invisible(NULL))
+
+  sig <- df_siglas_key_full$sigla[match(k, df_siglas_key_full$subpref_key)]
+  if (length(sig) != 1 || is.na(sig) || sig == "") sig <- k
+
+  arq <- file.path(pasta_out_comp, paste0("composicao_orgaos_", sig, ".png"))
+  ggplot2::ggsave(filename = arq, plot = g, width = 16, height = 10, dpi = 300, limitsize = FALSE)
+
+  n_ok_comp <<- n_ok_comp + 1
+})
+
+cat("✅ Composições exportadas:", n_ok_comp, "de", length(subprefs_key_full), "\n")
+cat("📁 Pasta:", pasta_out_comp, "\n")
+```
 
 ## Conclusão
 
