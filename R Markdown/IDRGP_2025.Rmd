@@ -22,7 +22,7 @@ Este documento consolida a análise do ciclo PPA **2022–2025**, considerando *
 
 **Fontes de dados:**
 
-- Dados regionalizados da execução orçamentária — Secretaria Municipal de Planejamento e Eficiência
+- Dados regionalizados da execução orçamentária — Secretaria Municipal de Planejamento e Eficiência (SEPLAN)
 - AOE ou IDRGP Alvo — SGM/SEPLAN/CPMA (IVU - 2025)
 - Dados cartográficos — GeoSampa (Subprefeituras de São Paulo)
 
@@ -94,7 +94,7 @@ df_siglas <- tibble(
 
 ## Caminhos dos arquivos
 
-As bases orçamentárias são arquivos locais de dados coletados até 30/04/2026. Para atualizar, basta **substituir os arquivos** na pasta `dados/` e ajustar os nomes abaixo.
+As bases orçamentárias são arquivos locais de dados coletados até 05/05/2026. Para atualizar, basta **substituir os arquivos** na pasta `dados/` e ajustar os nomes abaixo.
 
 ```{r caminhos, echo=FALSE}
 
@@ -117,13 +117,13 @@ achar_arquivo <- function(candidatos, pasta) {
 }
 
 # Bases orçamentárias (arquivos locais)
-arquivo_2022 <- file.path(pasta_dados, "basedadosDA_1222_validado.xlsx")
-arquivo_2023 <- file.path(pasta_dados, "basedadosDA_1223.csv.xlsx")
-arquivo_2024 <- file.path(pasta_dados, "basedadosDA_1224_validado.xlsx")
-arquivo_2025 <- file.path(pasta_dados, "basedadosDA_1225_validado.xlsx")
+arquivo_2022 <- achar_arquivo(c( "base_2022_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
+arquivo_2023 <- achar_arquivo(c("base_2023_SEPLAN_IDRGP_2025.xlsx", ), pasta_dados)
+arquivo_2024 <- achar_arquivo(c("base_2024_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
+arquivo_2025 <- achar_arquivo(c("base_2025_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
 
 # IDRGP Alvo (IVU)
-arquivo_ivu  <- file.path(pasta_dados, "ivu_subprefeituras_2025.xlsx")
+arquivo_ivu  <- achar_arquivo(c("ivu_subprefeituras_2025.xlsx"), pasta_dados)
 
 # Shapefile das subprefeituras (fonte: GeoSampa)
 arquivo_shp  <- file.path(pasta_dados, "subprefeitura_v2.shp")
