@@ -2,7 +2,7 @@
 ---
 title: "IDRGP — Índice de Distribuição Regional do Gasto Público"
 subtitle: "Análise do Ciclo PPA 2022–2025"
-author: "SEPLAN/CPMA — Prefeitura de São Paulo"
+author: "SEPLAN/SIME/CPMA — Prefeitura de São Paulo, 2026."
 date: "`r format(Sys.Date(), '%d/%m/%Y')`"
 output:
   html_document:
@@ -14,7 +14,7 @@ output:
     number_sections: true
 ---
 
-# Introdução
+# 1. Introdução
 
 O **IDRGP** (Índice de Distribuição Regional do Gasto Público) mede se a distribuição territorial dos gastos públicos municipais está alinhada às prioridades sociais e de infraestrutura de cada subprefeitura. Esse monitoramento se dá a partir da diferença entre os dados da Execução Regionalizada do Orçamento e da Alocação Orçamentária Esperada, expressa a partir do **Índice de Vulnerabilidade Urbana (IVU - 2025)** atualizado por SEPLAN/CPMA.
 
@@ -22,7 +22,7 @@ Este documento consolida a análise do ciclo PPA **2022–2025**, considerando *
 
 **Fontes de dados:**
 
-- Dados regionalizados da execução orçamentária — Secretaria Municipal de Planejamento e Eficiência (SEPLAN)
+- Dados regionalizados da execução orçamentária — Secretaria de Fazenda
 - AOE ou IDRGP Alvo — SGM/SEPLAN/CPMA (IVU - 2025)
 - Dados cartográficos — GeoSampa (Subprefeituras de São Paulo)
 
@@ -118,7 +118,7 @@ achar_arquivo <- function(candidatos, pasta) {
 
 # Bases orçamentárias (arquivos locais)
 arquivo_2022 <- achar_arquivo(c( "base_2022_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
-arquivo_2023 <- achar_arquivo(c("base_2023_SEPLAN_IDRGP_2025.xlsx", ), pasta_dados)
+arquivo_2023 <- achar_arquivo(c("base_2023_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
 arquivo_2024 <- achar_arquivo(c("base_2024_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
 arquivo_2025 <- achar_arquivo(c("base_2025_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
 
@@ -223,17 +223,26 @@ Nesta seção, as bases orçamentárias dos **4 anos** do ciclo PPA são importa
 Aqui se busca verificar o quanto se avançou na regionalização no quadriênio, bem como em qual proporção temos a regionalização de cada ação orçamentária.
 
 ```{r echo=FALSE}
-#criando arquivos paa cada execução orçamentária anual (loa) e para o conjunto dos anos (PPA)
-loa22 <- read_excel(arquivo_2022) %>% 
-  select(-DATA_LIQUIDAÇÃO, -DATA_EXTRAÇÃO)
-loa23 <- read_excel(arquivo_2023) %>% 
-  select(-DATA_LIQUIDAÇÃO)
-loa24 <- read_excel(arquivo_2024) %>% 
-  select(-DATA_LIQUIDAÇÃO)
-loa25 <- read_excel(arquivo_2025) %>% 
-  select(-DATA_LIQUIDAÇÃO)
-orcamento_ppa <- rbind(loa22, loa23, loa24, loa25)
-rm(loa22, loa23, loa24, loa25)
+#criando arquivos para cada execução orçamentária anual (loa) e para o conjunto dos anos (PPA)
+# Remove colunas de data (variam entre anos) e seleciona apenas colunas comuns
+cols_excluir <- c("DATA_LIQUIDAÇÃO", "DATA_EXTRAÇÃO")
+
+loa22 <- read_excel(arquivo_2022) %>% select(-any_of(cols_excluir))
+loa23 <- read_excel(arquivo_2023) %>% select(-any_of(cols_excluir))
+loa24 <- read_excel(arquivo_2024) %>% select(-any_of(cols_excluir))
+loa25 <- read_excel(arquivo_2025) %>% select(-any_of(cols_excluir))
+
+# Usa apenas colunas comuns aos 4 anos para o rbind
+cols_comuns <- Reduce(intersect, list(names(loa22), names(loa23), names(loa24), names(loa25)))
+cat("Colunas comuns aos 4 anos:", length(cols_comuns), "\n")
+
+orcamento_ppa <- bind_rows(
+  loa22 %>% select(all_of(cols_comuns)),
+  loa23 %>% select(all_of(cols_comuns)),
+  loa24 %>% select(all_of(cols_comuns)),
+  loa25 %>% select(all_of(cols_comuns))
+)
+rm(loa22, loa23, loa24, loa25, cols_comuns, cols_excluir)
 
 #anlisar por ação e ano a regionalização
 acao_reg<- orcamento_ppa %>% 
@@ -296,18 +305,13 @@ tabela_inconsistencias %>%
 ```
 
 ```{r funcoes_orcamento, echo=FALSE}
+# === Funções auxiliares de orçamento (definição ÚNICA) ===
+
 detectar_sheet <- function(arquivo, ano) {
   sheets <- readxl::excel_sheets(arquivo)
   match <- stringr::str_detect(sheets, as.character(ano))
   if (any(match)) sheets[which(match)[1]] else sheets[1]
 }
-
-
-# Bases detalhadas (para tabelas por órgão, quando necessário)
-basedadosDA_2022 <- readxl::read_xlsx(arquivo_2022)
-basedadosDA_2023 <- readxl::read_xlsx(arquivo_2023)
-basedadosDA_2024 <- readxl::read_xlsx(arquivo_2024)
-basedadosDA_2025 <- readxl::read_xlsx(arquivo_2025)
 
 padronizar_subprefeitura <- function(x) {
   x <- as.character(x)
@@ -325,6 +329,12 @@ coluna_valor_orc <- function(df) {
     names(df),
     c("valor_detalhamento_acao", "valor_detalhamento_a_cao")
   )[1]
+}
+
+agregar_por_subpref <- function(df) {
+  df |>
+    dplyr::group_by(subprefeitura) |>
+    dplyr::summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop")
 }
 
 resumo_regionalizacao <- function(arquivo, ano, sheet = 1) {
@@ -439,24 +449,16 @@ limpar_orcamento <- function(arquivo, ano, sheet = 1) {
 ## Processamento dos 4 anos
 
 
-```{r processamento_22_23_24_25, echo=FALSE, message=FALSE, warning=FALSE}
-# Detecta a aba correta para cada arquivo
-detectar_sheet <- function(arquivo, ano) {
-  sheets <- readxl::excel_sheets(arquivo)
-  match <- stringr::str_detect(sheets, as.character(ano))
-  if (any(match)) sheets[which(match)[1]] else sheets[1]
-}
-
-agregar_por_subpref <- function(df) {
-  df |>
-    dplyr::group_by(subprefeitura) |>
-    dplyr::summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop")
-}
+```{r processamento_unico, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# PROCESSAMENTO ÚNICO — leitura, limpeza e agregação dos 4 anos
+# ============================================================================
 
 anos <- 2022:2025
 arquivos <- c(arquivo_2022, arquivo_2023, arquivo_2024, arquivo_2025)
 names(arquivos) <- as.character(anos)
 
+# Processa cada ano: limpa e agrega
 dfs <- purrr::imap(arquivos, function(arq, ano_chr) {
   ano <- as.integer(ano_chr)
   aba <- detectar_sheet(arq, ano)
@@ -465,15 +467,24 @@ dfs <- purrr::imap(arquivos, function(arq, ano_chr) {
 
 agrs <- purrr::map(dfs, agregar_por_subpref)
 
+# Expõe variáveis no ambiente global para uso posterior
 list2env(setNames(dfs,  paste0("df_", anos)),  envir = .GlobalEnv)
 list2env(setNames(agrs, paste0("df_agr_", anos)), envir = .GlobalEnv)
 
+# === DIAGNÓSTICO: confirma que cada ano tem valores DISTINTOS ===
 resumo_anos <- tibble(
   ano = anos,
   n_linhas = purrr::map_int(dfs, nrow),
   n_subpref = purrr::map_int(agrs, ~ n_distinct(.x$subprefeitura)),
   valor_total = purrr::map_dbl(agrs, ~ sum(.x$valor, na.rm = TRUE))
 )
+
+# Verifica se os valores são realmente distintos
+if (n_distinct(resumo_anos$valor_total) < 4) {
+  warning("⚠ ATENÇÃO: Nem todos os anos têm valores totais distintos! Verifique as bases.")
+} else {
+  cat("✅ Os 4 anos possuem valores totais DISTINTOS — dados carregados corretamente.\n")
+}
 
 knitr::kable(
   resumo_anos |>
@@ -483,37 +494,6 @@ knitr::kable(
   col.names = c("Ano", "Linhas", "Subprefeituras", "Valor Total"),
   caption = "Resumo das bases orçamentárias processadas"
 )
-```
-
-# teste de adaptação dos 4 anos mas, com o contraste entre os documentos no próprio código o que simplifica sua relação com a base anual que se desenvolve na relação de uma para muitas. 
-
-```{r processamento, echo=FALSE, message=FALSE, warning=FALSE}
-# Detecta a aba correta para cada arquivo
-detectar_sheet <- function(arquivo, ano) {
-  sheets <- excel_sheets(arquivo)
-  # Tenta encontrar aba com o ano no nome
-  match <- str_detect(sheets, as.character(ano))
-  if (any(match)) return(sheets[which(match)[1]])
-  return(sheets[1])
-}
-
-# Processa cada ano
-df_2022 <- limpar_orcamento(arquivo_2022, 2022, detectar_sheet(arquivo_2022, 2022))
-df_2023 <- limpar_orcamento(arquivo_2023, 2023, detectar_sheet(arquivo_2023, 2023))
-df_2024 <- limpar_orcamento(arquivo_2024, 2024, detectar_sheet(arquivo_2024, 2024))
-df_2025 <- limpar_orcamento(arquivo_2025, 2025, detectar_sheet(arquivo_2025, 2025))
-
-# Agrega por subprefeitura e ano
-agregar_por_subpref <- function(df) {
-  df |>
-    group_by(subprefeitura) |>
-    summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop")
-}
-
-df_agr_2022 <- agregar_por_subpref(df_2022)
-df_agr_2023 <- agregar_por_subpref(df_2023)
-df_agr_2024 <- agregar_por_subpref(df_2024)
-df_agr_2025 <- agregar_por_subpref(df_2025)
 ```
 
 ## Base cartográfica (uma vez só)
@@ -1380,7 +1360,7 @@ cat("✅ Arquivos geoespaciais exportados.\n")
 
 ##teste de visualização das informações das ações e projetos nas subprefeituras - aqui ainda estamos em teste pq tem uma variação dificil de explicitar aqui; 
 
-```{r graficos_processos_subprefeituras, message=FALSE, warning=FALSE}
+```{r graficos_processos_subprefeituras, echo=FALSE, message=FALSE, warning=FALSE}
 # ============================================================================
 # Gráficos: processos (ações) por órgão, 1 gráfico por subprefeitura (32)
 # - Empilhado horizontal
@@ -1646,7 +1626,7 @@ cat("📁 Pasta:", pasta_out, "\n")
 
 
 ## código alternativa se o empilhado na horizontal der errado 
-```{r conclusao, message=FALSE, warning=FALSE}
+```{r composicao_subprefeituras, echo=FALSE, message=FALSE, warning=FALSE}
 # ============================================================================
 # Composição (4 gráficos) por subprefeitura (sem agrupamentos de órgãos)
 # - Barras vertical + barras horizontal + pie + donut
@@ -1829,7 +1809,7 @@ cat("📁 Pasta:", pasta_out_comp, "\n")
 ## Conclusão
 
 
-```{r conclusao, message=FALSE, warning=FALSE}
+```{r conclusao_final, echo=FALSE, message=FALSE, warning=FALSE}
 res_2025 <- if (exists("res_2025")) res_2025 else idrgp_por_ano[["2025"]]
 total_valor <- res_2025$total_valor
 
