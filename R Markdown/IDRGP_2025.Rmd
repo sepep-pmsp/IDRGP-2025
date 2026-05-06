@@ -28,7 +28,8 @@ Este documento consolida a análise do ciclo PPA **2022–2025**, considerando *
 
 **Referência:** <https://prefeitura.sp.gov.br/web/planejamento/w/execucao_orcamentaria>
 
-## Bibliotecas
+## 2. Bibliotecas convocadas 
+Este bloco reúne os pacotes necessários para o funcionamento do modelo analítico. Em termos práticos, ele estrutura três capacidades centrais do estudo: (i) tratamento e organização de grandes bases de dados orçamentários, (ii) integração com dados territoriais (mapas das subprefeituras) e (iii) produção de visualizações e tabelas para apoio à decisão. A presença de bibliotecas específicas para leitura de Excel, manipulação de dados e geoprocessamento garante que o fluxo seja reproduzível e passível de atualização com novas bases.
 
 ```{r bibliotecas, echo=FALSE, message=FALSE, warning=FALSE}
 library(tidyverse)   # manipulação e visualização de dados
@@ -46,9 +47,9 @@ library(dplyr)
 
 
 
-## Funções auxiliares
+## 3. Funções auxiliares
+Este trecho resolve um problema recorrente na administração pública: a inconsistência na escrita de nomes entre diferentes bases. A função cria uma “chave única” ao remover acentos, padronizar letras e eliminar variações textuais. Na prática, isso permite cruzar corretamente dados de orçamento, indicadores sociais e mapas, evitando erros de correspondência entre subprefeituras. É um elemento crítico para a confiabilidade da análise.
 
-A função `norm_name()` cria uma chave de integração entre as diversas bases de dados. Remove acentos, converte para minúsculas e elimina caracteres não alfabéticos, garantindo que nomes escritos de formas ligeiramente diferentes sejam reconhecidos como iguais.
 
 ```{r funcao_norm_name, echo=FALSE}
 norm_name <- function(x) {
@@ -67,9 +68,11 @@ norm_name <- function(x) {
 }
 ```
 
-## Tabela de referência das subprefeituras
+## 4. Tabela de referência das subprefeituras
 
-Tabela oficial de correspondência **sigla → nome** das 32 subprefeituras. Usada para padronizar nomes vindos de diferentes fontes (shapefile, orçamento, IVU).
+Aqui é estabelecida a base oficial de correspondência entre siglas e nomes das 32 subprefeituras. Essa tabela funciona como padrão institucional de nomenclatura, garantindo que todas as bases utilizem a mesma referência territorial.
+
+Ela é essencial para consolidar informações oriundas de diferentes sistemas administrativos e assegurar consistência na leitura dos resultados.
 
 ```{r df_siglas, echo=FALSE}
 df_siglas <- tibble(
@@ -92,9 +95,11 @@ df_siglas <- tibble(
 )
 ```
 
-## Caminhos dos arquivos
+## 5.Definição dos caminhos dos arquivos
 
-As bases orçamentárias são arquivos locais de dados coletados até 05/05/2026. Para atualizar, basta **substituir os arquivos** na pasta `dados/` e ajustar os nomes abaixo.
+Este bloco organiza o acesso às bases de dados utilizadas na análise. Ele define onde estão armazenados os arquivos e automatiza sua localização, permitindo que o sistema funcione mesmo quando há pequenas variações nos nomes dos arquivos.
+
+Além disso, incorpora mecanismos de verificação: caso algum arquivo essencial esteja ausente, o processo é interrompido com aviso claro. Isso evita análises incompletas ou inconsistentes e reforça o controle de qualidade dos dados.
 
 ```{r caminhos, echo=FALSE}
 
@@ -154,11 +159,14 @@ if (length(aux_faltando) > 0) {
 
 ```
 
-# AOE ou IDRGP Alvo
+# 6. Importação do IVU com AOE ou IDRGP Alvo
 
-O AOE (ou **IDRGP Alvo**) é o índice de referência que indica qual proporção dos gastos públicos deveria ser destinada a cada subprefeitura. Nesta análise utilizamos o **IVU (2025)**.
+Neste ponto, o modelo incorpora o parâmetro normativo da análise: o IDRGP Alvo, derivado do Índice de Vulnerabilidade Urbana.
 
-## Importação do IVU
+O código transforma o IVU em uma distribuição proporcional (que soma 100%), indicando quanto cada subprefeitura deveria receber em termos de gasto público, dado seu nível relativo de vulnerabilidade.
+
+Essa etapa estabelece a referência contra a qual a execução orçamentária será avaliada.
+
 
 ```{r idrgp_alvo, echo=FALSE}
 
@@ -184,8 +192,11 @@ df_idrgp <- readxl::read_excel(arquivo_ivu) |>
 
 ```
 
-## Controles de qualidade
+## 7. Verificação da qualidade das informações
 
+Este bloco realiza uma checagem fundamental: confirma se o índice calculado está consistente (ou seja, se a soma total equivale a 100%) e se todas as subprefeituras estão presentes.
+
+Também prepara a base para integração com outras informações, criando a chave padronizada. Trata-se de uma etapa de validação que assegura que os resultados posteriores sejam estatisticamente e operacionalmente confiáveis.
 
 ```{r controle_idrgp, echo=FALSE}
 # A soma do IDRGP Alvo deve ser igual a 1 (100%)
@@ -210,17 +221,17 @@ df_idrgp <- df_idrgp |>
 knitr::kable(
   df_idrgp |> select(subprefeitura, idrgp_alvo),
   col.names = c("Subprefeitura", "IDRGP Alvo"),
-  digits = 4, caption = "IDRGP Alvo (baseado no IVU 2024)"
+  digits = 4, caption = "IDRGP Alvo 2025 (baseado no IVU 2024)"
 )
 ```
 
-# Dados Orçamentários e Limpeza
+# 8. Importação e consolidação das bases orçamentárias
 
-Nesta seção, as bases orçamentárias dos **4 anos** do ciclo PPA são importadas e padronizadas por uma **função de limpeza unificada**. Isso garante consistência no tratamento e facilita a atualização futura.
+Aqui ocorre a construção da base principal da análise. Os dados de execução orçamentária dos quatro anos do PPA são carregados, padronizados e consolidados em uma única estrutura.
 
-## Análise preliminar das ações orçamentárias regionalizadas
+O código garante que apenas as colunas comuns entre os anos sejam utilizadas, permitindo comparabilidade ao longo do tempo.
 
-Aqui se busca verificar o quanto se avançou na regionalização no quadriênio, bem como em qual proporção temos a regionalização de cada ação orçamentária.
+O resultado é uma base integrada que representa todo o gasto público municipal regionalizado no período 2022–2025
 
 ```{r echo=FALSE}
 #criando arquivos para cada execução orçamentária anual (loa) e para o conjunto dos anos (PPA)
@@ -304,6 +315,19 @@ tabela_inconsistencias %>%
 
 ```
 
+
+## 9. Análise da regionalização das ações orçamentárias
+
+Este bloco examina como o orçamento está distribuído territorialmente dentro de cada ação governamental.
+
+Ele identifica:
+
+* o grau de regionalização de cada ação;
+* mudanças ao longo do tempo;
+* inconsistências na classificação.
+
+Do ponto de vista da gestão, essa etapa permite entender se as políticas públicas estão sendo territorializadas de forma consistente ou se ainda operam de maneira centralizada (“supra”).
+
 ```{r funcoes_orcamento, echo=FALSE}
 # === Funções auxiliares de orçamento (definição ÚNICA) ===
 
@@ -386,7 +410,20 @@ Alguns destaques em relação a inconsistência (variação) podem ser:
 * *4332-Manutenção da Ouvidoria de Direitos Humanos*
 * *7208-Parceria Público-Privada (PPP) - CEU*
 
-## Função de limpeza unificada
+----
+
+## 10. Função de limpeza unificada
+Este é um dos núcleos operacionais do modelo. A função:
+
+* padroniza os dados;
+* remove inconsistências (NA//);
+* elimina registros não territorializáveis;
+* organiza as variáveis essenciais.
+
+O resultado é uma base limpa e homogênea, pronta para análise.
+
+Para a gestão, isso significa que os dados utilizados já passaram por um processo rigoroso de qualificação.
+
 
 ```{r funcao_limpeza, echo=FALSE}
 #' Importa e padroniza uma base orçamentária anual.
@@ -446,7 +483,13 @@ limpar_orcamento <- function(arquivo, ano, sheet = 1) {
 }
 ```
 
-## Processamento dos 4 anos
+## 11. Processamento dos 4 anos
+
+Aqui o sistema aplica a mesma lógica de tratamento a todos os anos do PPA, garantindo comparabilidade temporal.
+
+Além disso, é realizada uma verificação importante: confirma-se que os valores totais de cada ano são distintos, evitando duplicações ou erros de leitura.
+
+O resultado é um conjunto estruturado de bases anuais e agregadas, que sustentam toda a análise posterior.
 
 
 ```{r processamento_unico, echo=FALSE, message=FALSE, warning=FALSE}
@@ -496,9 +539,14 @@ knitr::kable(
 )
 ```
 
-## Base cartográfica (uma vez só)
+## 12. Base cartográfica (uma vez só)
 
-Carregamos o shapefile das subprefeituras baixado do GeoSampa **uma vez** e reaproveitamos em todos os anos.
+Este bloco conecta os dados financeiros ao território, incorporando o shapefile das subprefeituras.
+
+A partir disso, cada valor orçamentário passa a estar associado a uma unidade espacial, viabilizando a produção de mapas e análises territoriais.
+
+É aqui que o orçamento correlaciona-se ao território.
+
 
 ```{r integracao_2025, echo=FALSE}
 # Dados cartográficos
@@ -515,14 +563,19 @@ subprefeitura_sf <- read_sf(arquivo_shp) |>
   select(sigla, subprefeitura, join_key, geometry)
 ```
 
-# Análises por ano (2022–2025)
+# 13. Funções de cálculo do IDRGP
 
-Nesta seção, para **cada ano** nós geramos:
+Este conjunto de funções realiza o cálculo central do estudo: compara o gasto real com o gasto esperado (IDRGP Alvo).
 
-1) **Regionalização por ação (projeto/atividade)**  
-2) **IDRGP Real vs IDRGP Alvo** (teste KS + t pareado/Wilcoxon + classificação por IC 95%)
+Também aplica testes estatísticos para avaliar se as diferenças observadas são significativas.
 
-## Funções (IDRGP por ano)
+Além disso, classifica cada subprefeitura em três situações:
+
+acima do esperado,
+dentro do esperado,
+abaixo do esperado.
+
+Essa etapa traduz os dados complexos orçamentários em um diagnóstico direto para a tomada de decisão.
 
 ```{r funcoes_idrgp_por_ano, echo=FALSE}
 testar_idrgp <- function(df_base) {
@@ -630,9 +683,17 @@ integrar_idrgp_ano <- function(df_agr_ano, ano_ref, subprefeitura_sf, df_idrgp) 
 }
 ```
 
-## Preparação (gera tudo em listas)
+### 14. Preparação das análises por ano
 
-Este chunk faz o “trabalho pesado” uma única vez e guarda tudo em listas fáceis de usar.
+Neste bloco, o modelo executa automaticamente todas as análises para cada ano do ciclo.
+
+Ele organiza os resultados em estruturas padronizadas, permitindo:
+
+comparações entre anos;
+geração de tabelas;
+produção de relatórios.
+
+É o momento em que o processamento técnico se transforma em insumo.
 
 
 ```{r, message=FALSE, warning=FALSE}
@@ -656,7 +717,11 @@ purrr::iwalk(idrgp_por_ano, function(res, ano_chr) {
 })
 ```
 
-## Resumo geral da regionalização (por ano)
+## 15. Resumo da regionalização
+
+Aqui é apresentado um indicador sintético: o percentual do orçamento efetivamente regionalizado em cada ano.
+
+Esse dado permite avaliar a evolução da capacidade do município de territorializar suas políticas públicas ao longo do tempo.
 
 ```{r resumo_regionalizacao_ano, echo=FALSE, message=FALSE, warning=FALSE}
 resumo_reg_ano <- df_reg |>
@@ -680,13 +745,16 @@ knitr::kable(
 )
 ```
 
-## Análises de 2022 a 2025 (mesmo roteiro em cada ano)
+### 16. Rotina de análise anual (imprimir_analise_ano)
 
-Para ficar **didático e replicável**, usamos:
+Este bloco organiza a apresentação dos resultados para cada ano. Ele:
 
-1) **Regionalização por ação** (tabela completa exportada para Excel)  
-2) **Teste estatístico do IDRGP** (KS + método + IC 95%)  
-3) **Classificação das subprefeituras** (estatística e variação percentual)
+resume a regionalização;
+destaca as ações mais territorializadas;
+apresenta os resultados estatísticos do IDRGP;
+classifica as subprefeituras.
+
+Além disso, exporta os dados para Excel, facilitando o uso por equipes técnicas e gestores.
 
 ```{r funcao_imprimir_ano, echo=FALSE, message=FALSE, warning=FALSE}
 imprimir_analise_ano <- function(ano) {
@@ -772,33 +840,35 @@ imprimir_analise_ano <- function(ano) {
 
 ```
 
-## Análise de 2022
+## 16.1. Análise de 2022
 
 ```{r analise_2022, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 imprimir_analise_ano(2022)
 ```
 
-## Análise de 2023
+## 16.2. Análise de 2023
 
 ```{r analise_2023, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 imprimir_analise_ano(2023)
 ```
 
-## Análise de 2024
+## 16.3. Análise de 2024
 
 ```{r analise_2024, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 imprimir_analise_ano(2024)
 ```
 
-## Análise de 2025
+## 16.4. Análise de 2025
 
 ```{r analise_2025, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 imprimir_analise_ano(2025)
 ```
 
-## Consolidação histórica (2022–2025) + teste do ciclo
+## 16.5. Consolidação histórica (2022–2025) + teste do ciclo
 
-Aqui consolidamos o **ciclo inteiro** e também aplicamos o mesmo teste estatístico no **acumulado 2022–2025**.
+Neste ponto, o modelo integra todos os anos em uma única análise consolidada.
+
+Ele calcula o IDRGP acumulado do ciclo e aplica novamente os testes estatísticos, permitindo avaliar o desempenho estrutural da política de distribuição territorial do gasto.
 
 ```{r historico, echo=FALSE}
 # Para manter o relatório “compatível” com os mapas/gráficos já montados,
@@ -908,9 +978,15 @@ cat("✅ Teste do ciclo:", toupper(metodo_estatistico_ciclo),
     "| IC 95% [", round(ic_inf_ciclo, 6), ";", round(ic_sup_ciclo, 6), "]\n")
 ```
 
+# 18. Geração de mapas (uma única vez)
 
+Os mapas traduzem os resultados em linguagem espacial. Eles permitem identificar rapidamente padrões territoriais, como:
 
-# Mapas - estrutura
+concentração de recursos;
+áreas subfinanciadas;
+mudanças ao longo do tempo.
+
+São instrumentos centrais para comunicação com gestores e apoio à decisão estratégica, como bem uma boa governança espacial.
 
 ```{r config_mapas, echo=FALSE}
 cores_status <- c(
@@ -943,30 +1019,9 @@ gerar_mapa <- function(sf_data, col_status, titulo, nota = "") {
 }
 ```
 
-## Mapas 2022, 2023 e 2024 individuais  com o status quanto ao IDRGP com a Variação de 30% [status_var_percentual (±30%): classifica cada subprefeitura pelo tamanho do desvio relativo ao alvo: (real − alvo) / alvo. Se passar de +0.30 vira “Acima”, abaixo de −0.30 vira “Abaixo”, senão “Dentro”. É um corte fixo e arbitrário (muda bastante se você trocar 30% por 20%/40%), e pode ficar “estranho” quando idrgp_alvo é muito pequeno ou zero (o percentual explode/precisa de regra especial).]
 
+### 18.1. Mapas 2022, 2023 e 2024 individuais com o status quanto aos testes estatísticos [status_estatistico (IC 95%): classifica pela incerteza do desvio, usando o intervalo de confiança 95% da diferença (real − alvo) no conjunto de subprefeituras daquele ano. Se a diferença ficar abaixo do limite inferior do IC → “Abaixo”; acima do superior → “Acima”; dentro do intervalo → “Dentro”. Não depende de “30%”, é mais defensável estatisticamente, mas é relativo ao ano/amostra (o IC muda com N e variabilidade), então “Dentro” aqui significa “não detectamos diferença consistente a 95%”, não “está perto do alvo”.]
 
-
-
-```{r mapas_hist_2022_2023_2024, echo=FALSE, fig.height=10, fig.width=12}
-
-preparar_sf <- function(int_data) {
-  subprefeitura_sf |>
-    left_join(int_data |> select(join_key, status), by = "join_key")
-}
-
-mapa1 <- gerar_mapa(preparar_sf(int_2022), "status",
-  "IDRGP 2022 — Status quanto ao IDRGP Alvo", "Variação percentual (±30%).")
-mapa2 <- gerar_mapa(preparar_sf(int_2023), "status",
-  "IDRGP 2023 — Status quanto ao IDRGP Alvo", "Variação percentual (±30%).")
-mapa3 <- gerar_mapa(preparar_sf(int_2024), "status",
-  "IDRGP 2024 — Status quanto ao IDRGP Alvo", "Variação percentual (±30%).")
-
-print(mapa1); print(mapa2); print(mapa3)
-```
-
-
-### Mapas 2022, 2023 e 2024 individuais com o status quanto aos testes estatísticos [status_estatistico (IC 95%): classifica pela incerteza do desvio, usando o intervalo de confiança 95% da diferença (real − alvo) no conjunto de subprefeituras daquele ano. Se a diferença ficar abaixo do limite inferior do IC → “Abaixo”; acima do superior → “Acima”; dentro do intervalo → “Dentro”. Não depende de “30%”, é mais defensável estatisticamente, mas é relativo ao ano/amostra (o IC muda com N e variabilidade), então “Dentro” aqui significa “não detectamos diferença consistente a 95%”, não “está perto do alvo”.]
 
 ```{r mapas_hist, echo=FALSE, fig.height=10, fig.width=12}
 preparar_sf_ano <- function(ano) {
@@ -991,8 +1046,7 @@ print(mapa1); print(mapa2); print(mapa3)
 ```
 
 
-
-## Mapa 2025 - status estatístico adotado
+## 18.2. Mapa 2025 - status estatístico adotado
 
 ```{r mapa_2025, echo=FALSE, fig.height=10, fig.width=12}
 mapa4 <- gerar_mapa(df_integrado, "status_estatistico",
@@ -1002,7 +1056,7 @@ mapa4 <- gerar_mapa(df_integrado, "status_estatistico",
 print(mapa4)
 ```
 
-## Mapa Agregado 2022–2025
+## 18.3. Mapa Agregado 2022–2025
 
 ```{r mapa_ciclo, echo=FALSE, fig.height=10, fig.width=12}
 # garante a diferença no próprio sf
@@ -1043,7 +1097,15 @@ cat("✅ 5 mapas gerados.\n")
 ```
 
 
-# Gráficos
+# 19. Geração de gráficos
+
+Os gráficos complementam os mapas ao apresentar:
+
+comparações entre previsto e executado;
+evolução temporal dos gastos;
+distribuição percentual e absoluta dos recursos.
+
+Eles facilitam a leitura analítica e a identificação de tendências.
 
 ```{r tema_graficos, echo=FALSE}
 tema_barras <- theme_minimal(base_size = 12) +
@@ -1056,7 +1118,7 @@ tema_barras <- theme_minimal(base_size = 12) +
     axis.text.y   = element_text(size = 8))
 ```
 
-## G1 — IDRGP 2025: Alvo vs. Real (%)
+## 19.1. G1 — IDRGP 2025: Alvo vs. Real (%)
 
 ```{r grafico1, echo=FALSE, fig.width=14, fig.height=12}
 grafico1 <- ggplot(df_integrado, aes(y = reorder(subprefeitura, idrgp_alvo))) +
@@ -1077,7 +1139,7 @@ grafico1 <- ggplot(df_integrado, aes(y = reorder(subprefeitura, idrgp_alvo))) +
 print(grafico1)
 ```
 
-## G2 — IDRGP Agregado 2022–2025 (%)
+## 19.2. G2 — IDRGP Agregado 2022–2025 (%)
 
 ```{r grafico2, echo=FALSE, fig.width=14, fig.height=12}
 grafico2 <- ggplot(df_ciclo, aes(y = reorder(subprefeitura, idrgp_alvo))) +
@@ -1097,7 +1159,7 @@ grafico2 <- ggplot(df_ciclo, aes(y = reorder(subprefeitura, idrgp_alvo))) +
 print(grafico2)
 ```
 
-## G3 — IDRGP 2025: Valores Absolutos (R\$)
+## 19.3. G3 — IDRGP 2025: Valores Absolutos (R\$)
 
 ```{r grafico3, echo=FALSE, fig.height=12, fig.width=14}
 df_plot <- df_integrado |>
@@ -1137,7 +1199,7 @@ grafico3 <- ggplot(df_plot, aes(y = reorder(subprefeitura, idrgp_alvo))) +
 print(grafico3)
 ```
 
-## G4 — IDRGP 2022–2025: Série Histórica (R\$)
+## 19.4. G4 — IDRGP 2022–2025: Série Histórica (R\$)
 
 ```{r grafico4, echo=FALSE, fig.width=14, fig.height=12}
 df_longo_plot <- df_longo |>
@@ -1172,24 +1234,53 @@ print(grafico4)
 cat("✅ 4 gráficos gerados.\n")
 ```
 
-# Exportação e Anexos
+### 20. Exportação de resultados
 
-## Tabela de anexos (2025)
+Este bloco garante que todos os produtos gerados (tabelas, mapas, gráficos e bases de dados) sejam salvos de forma estruturada.
 
-Detalhamento do valor liquidado por **projeto/atividade** em cada subprefeitura — apenas para o ano de **2025**.
+Isso permite:
+
+compartilhamento institucional;
+auditoria;
+reaproveitamento em outras análises.
 
 ```{r anexos, echo=FALSE}
 df_anexo <- df_2025 |>
   group_by(subprefeitura, descricao_proj_ativ) |>
-  summarise(valor_liquidado = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") |>
+  summarise(
+    valor_liquidado = sum(valor_detalhamento_acao, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
   rename(projeto_atividade = descricao_proj_ativ) |>
   arrange(subprefeitura, projeto_atividade)
 
 cat("Subprefeituras em df_anexo:", n_distinct(df_anexo$subprefeitura), "\n")
-cat("Valor total:", format(sum(df_anexo$valor_liquidado), big.mark = ".", decimal.mark = ","), "\n")
+cat(
+  "Valor total:",
+  format(sum(df_anexo$valor_liquidado), big.mark = ".", decimal.mark = ","),
+  "\n"
+)
+
+# df_anexo_2025.xlsx com 32 abas (1 por subprefeitura)
+sheet_names_anexo <- df_siglas$subprefeitura |>
+  str_replace_all("[\\\\/\\?\\*\\[\\]:]", "-") |>
+  str_squish() |>
+  str_trunc(width = 31, side = "right", ellipsis = "")
+
+sheet_names_anexo <- make.unique(sheet_names_anexo, sep = "_")
+
+abas_anexo_2025 <- purrr::map(
+  df_siglas$subprefeitura,
+  \(sp) df_anexo |> filter(subprefeitura == sp)
+)
+
+abas_anexo_2025 <- rlang::set_names(abas_anexo_2025, sheet_names_anexo)
+
+write_xlsx(abas_anexo_2025, path = file.path(pasta_saida, "df_anexo_2025.xlsx"))
+
 ```
 
-## Tabelas para 2022-2025
+## 20.1. Tabelas para 2022-2025
 
 - Uma tabela para os 10 maiores proj/ativ e valor por sub
 - Uma tabelea por sub com a distribuição dos maiores gastos por órgão
@@ -1204,6 +1295,8 @@ tabela_gasto_sub<- gasto_reg %>%
   group_by(subprefeitura) %>% 
   slice_max(order_by = valor, n = 10)
 ```
+
+## 20.2. O segundo bloco aprofunda a análise ao observar não apenas “o que” é gasto, mas “quem” executa o gasto público no território. Inicialmente, é definida uma função que lê os arquivos anuais e identifica automaticamente as colunas relevantes (subprefeitura, órgão e valor), mesmo quando há variações nos nomes dessas colunas. Isso garante robustez ao processo e reduz a dependência de padronizações prévias nos arquivos de origem. Na sequência, os dados dos quatro anos são consolidados e agregados por subprefeitura e órgão executor, resultando no valor total executado por cada órgão em cada território. Para qualificar a análise, calcula-se também a participação percentual de cada órgão no total gasto da subprefeitura, permitindo compreender a estrutura relativa do gasto.Por fim, é produzida uma versão sintética da tabela, na qual órgãos com participação inferior a 4% são agrupados na categoria “Outros”. Essa decisão metodológica melhora a legibilidade dos resultados, destacando os principais atores institucionais responsáveis pela execução do orçamento em cada território.
 
 
 ```{r tabela_orgao_2022_2025, echo=FALSE, message=FALSE, warning=FALSE}
@@ -1261,7 +1354,7 @@ graf_orgao_sub <- gasto_orgao_reg %>%
 ```
 
 
-# Fazendo tabela para gráfico no anexo
+# 20.3. Fazendo tabela para gráfico no anexo
 ```{r graf_orgao_sub, echo=FALSE, message=FALSE, warning=FALSE}
 # Fazendo tabela para gráfico no anexo
 graf_orgao_sub <- gasto_orgao_reg %>%
@@ -1276,7 +1369,7 @@ graf_orgao_sub <- gasto_orgao_reg %>%
   dplyr::ungroup()
 ```
 
-## Exportação de mapas e gráficos
+## 20.4. Exportação de mapas e gráficos
 
 ```{r exporta_png, echo=FALSE}
 # Mapas (300 dpi)
@@ -1295,7 +1388,7 @@ ggsave(file.path(pasta_saida, "grafico4_serie_2022_2025.png"), grafico4, width=1
 cat("✅ Mapas e gráficos exportados.\n")
 ```
 
-## Exportação de dados em Excel
+## 20.5. Exportação de dados em Excel
 
 ```{r exporta_xlsx, echo=FALSE}
 write_xlsx(
@@ -1325,7 +1418,7 @@ write_xlsx(
 cat("✅ Planilhas exportadas.\n")
 ```
 
-## Exportação geoespacial
+## 20.6. Exportação geoespacial
 
 ```{r exporta_geo, echo=FALSE}
 # GeoPackage — IDRGP 2025
@@ -1358,455 +1451,16 @@ cat("✅ Arquivos geoespaciais exportados.\n")
 ```
 
 
-##teste de visualização das informações das ações e projetos nas subprefeituras - aqui ainda estamos em teste pq tem uma variação dificil de explicitar aqui; 
 
-```{r graficos_processos_subprefeituras, echo=FALSE, message=FALSE, warning=FALSE}
-# ============================================================================
-# Gráficos: processos (ações) por órgão, 1 gráfico por subprefeitura (32)
-# - Empilhado horizontal
-# - Usa apenas siglas pré-definidas + "Outros" (explicado na legenda)
-# - Cada secretaria/órgão tem UMA cor fixa (bem contrastante), dialogando com a identidade
-# - Exporta PNGs EXATAMENTE em:
-#   C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown/resultados/graficos_processos_subprefeituras
-# ============================================================================
+## 21. Conclusão automatizada
 
-# --- parâmetros ---
-anos_processos <- 2022:2025
-top_n_legenda  <- 12
-min_pct_outros <- 0.01
+Por fim, o relatório sintetiza os principais indicadores do ciclo analisado, incluindo:
 
-pasta_out <- "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown/resultados/graficos_processos_subprefeituras"
+volume total de recursos;
+método estatístico utilizado;
+intervalo de confiança dos resultados.
 
-# --- checagens ---
-if (!exists("df_siglas")) stop("Objeto `df_siglas` não encontrado (chunk df_siglas).")
-if (!exists("detectar_sheet")) stop("Função `detectar_sheet` não encontrada (chunk funcoes_orcamento).")
-if (!exists("padronizar_subprefeitura")) stop("Função `padronizar_subprefeitura` não encontrada (chunk funcoes_orcamento).")
-if (!exists("norm_name")) stop("Função `norm_name` não encontrada (chunk funcao_norm_name).")
-if (!exists("arquivo_2022") || !exists("arquivo_2023") || !exists("arquivo_2024") || !exists("arquivo_2025")) {
-  stop("Arquivos 2022–2025 não encontrados (chunk caminhos).")
-}
-
-detectar_coluna <- function(df, candidatos) {
-  hit <- candidatos[candidatos %in% names(df)][1]
-  if (is.na(hit) || length(hit) == 0) NA_character_ else hit
-}
-
-normalizar_sigla_orgao <- function(x) {
-  x <- stringr::str_squish(as.character(x))
-  x <- dplyr::na_if(x, "")
-  x <- dplyr::recode(x,
-    "SP PARCERIAS" = "SP Parcerias",
-    "SP_PARCEIRAS" = "SP Parcerias",
-    "SPParcerias"  = "SP Parcerias",
-    "CASA CIVIL"   = "Casa Civil",
-    .default = x
-  )
-  x
-}
-
-orgaos_permitidos <- c(
-  "Casa Civil",
-  "SMADS","SMC","SMDET","SMDHC","SME","SEME","SEGES","SEHAB","SMIT","SMJ","SEL","SMUL",
-  "SMT","SP Parcerias","SMPED","SMRI","SMS","SMSU","SMSUB","SMTUR","SVMA","SF","SGM","CGM"
-)
-
-outros_label <- paste0(
-  "Outros (demais órgãos fora da lista e/ou com participação < ",
-  format(round(min_pct_outros * 100, 1), nsmall = 1), "% na subprefeitura, ",
-  "e/ou além do Top ", top_n_legenda, " por subprefeitura)"
-)
-
-# paleta fixa: 1 cor por secretaria/órgão (todas diferentes e contrastantes)
-pal_orgao <- c(
-  "Casa Civil"    = "#1A1442",
-
-  "SMADS"         = "#2E86AB",
-  "SMC"           = "#7A3DB8",
-  "SMDET"         = "#D97A0F",
-  "SMDHC"         = "#D64550",
-  "SME"           = "#0EA1CF",
-  "SEME"          = "#2DBE7E",
-  "SEGES"         = "#546A7B",
-  "SEHAB"         = "#9B59B6",
-  "SMIT"          = "#00A8A8",
-  "SMJ"           = "#8E6C88",
-  "SEL"           = "#4C78A8",
-  "SMUL"          = "#E45756",
-
-  "SMT"           = "#F2A541",
-  "SP Parcerias"  = "#6F4E37",
-  "SMPED"         = "#1F77B4",
-  "SMRI"          = "#17A589",
-  "SMS"           = "#C0392B",
-  "SMSU"          = "#34495E",
-  "SMSUB"         = "#5DADE2",
-  "SMTUR"         = "#E67E22",
-  "SVMA"          = "#2E7D32",
-  "SF"            = "#8E44AD",
-  "SGM"           = "#16A085",
-  "CGM"           = "#7F8C8D"
-)
-
-# adiciona a cor do "Outros (...)" (sem usar :=)
-pal_orgao <- c(pal_orgao, stats::setNames("#9E9E9E", outros_label))
-
-# garante que todo permitido tem cor (fallback se algo faltar)
-faltando <- setdiff(orgaos_permitidos, names(pal_orgao))
-if (length(faltando) > 0) {
-  extra <- grDevices::hcl(
-    h = seq(15, 345, length.out = length(faltando) + 1)[1:length(faltando)],
-    c = 75, l = 50
-  )
-  names(extra) <- faltando
-  pal_orgao <- c(pal_orgao, extra)
-}
-
-ler_base_processos <- function(arquivo, ano) {
-  aba <- detectar_sheet(arquivo, ano)
-  df0 <- readxl::read_excel(arquivo, sheet = aba) |>
-    janitor::clean_names()
-
-  col_sub  <- detectar_coluna(df0, c("subprefeitura"))
-  col_org  <- detectar_coluna(df0, c("sigla_orgao","sigla_orgao_responsavel","sigla_orgao_resp","sigla_do_orgao","orgao","orgao_responsavel"))
-  col_acao <- detectar_coluna(df0, c("descricao_proj_ativ","descricao_projeto_atividade","descricao_acao","projeto_atividade","projeto_ativ"))
-  col_val  <- if (exists("coluna_valor_orc")) coluna_valor_orc(df0) else detectar_coluna(df0, c("valor_detalhamento_acao","valor_detalhamento_a_cao"))
-
-  if (is.na(col_sub)) stop("Não achei coluna de subprefeitura em: ", basename(arquivo))
-  if (is.na(col_org)) stop("Não achei coluna de órgão/sigla_orgao em: ", basename(arquivo))
-  if (is.na(col_acao)) stop("Não achei coluna de descricao_proj_ativ (ação) em: ", basename(arquivo))
-  if (is.na(col_val)) stop("Não achei coluna de valor em: ", basename(arquivo))
-
-  df0 |>
-    dplyr::transmute(
-      ano = as.integer(ano),
-      subprefeitura = padronizar_subprefeitura(.data[[col_sub]]),
-      subpref_key   = norm_name(padronizar_subprefeitura(.data[[col_sub]])),
-      sigla_orgao   = normalizar_sigla_orgao(.data[[col_org]]),
-      acao          = stringr::str_squish(as.character(.data[[col_acao]])),
-      valor         = as.numeric(.data[[col_val]])
-    ) |>
-    dplyr::filter(
-      !is.na(subprefeitura), subprefeitura != "",
-      !stringr::str_detect(subprefeitura, "Supra"),
-      !is.na(subpref_key), subpref_key != "",
-      !is.na(sigla_orgao), sigla_orgao != "",
-      !is.na(acao), acao != ""
-    )
-}
-
-arquivos_anos <- c("2022" = arquivo_2022, "2023" = arquivo_2023, "2024" = arquivo_2024, "2025" = arquivo_2025)
-
-df_proc <- purrr::map_dfr(
-  anos_processos,
-  ~ ler_base_processos(arquivos_anos[as.character(.x)], .x)
-)
-
-df_proc <- df_proc |>
-  dplyr::mutate(sigla_orgao = dplyr::if_else(sigla_orgao %in% orgaos_permitidos, sigla_orgao, "Outros"))
-
-df_sum <- df_proc |>
-  dplyr::group_by(subpref_key, sigla_orgao) |>
-  dplyr::summarise(
-    n_processos = dplyr::n_distinct(acao),
-    valor_total = sum(valor, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  dplyr::filter(n_processos > 0)
-
-df_siglas_key <- df_siglas |>
-  dplyr::mutate(subpref_key = norm_name(subprefeitura))
-
-subprefs_key <- df_siglas_key$subpref_key
-
-if (!dir.exists(pasta_out)) dir.create(pasta_out, recursive = TRUE)
-
-tema_local <- if (exists("tema_barras")) tema_barras else ggplot2::theme_minimal(base_size = 12)
-
-plot_subpref <- function(subpref_key) {
-  nome_legivel <- df_siglas_key$subprefeitura[match(subpref_key, df_siglas_key$subpref_key)]
-
-  dfp <- df_sum |>
-    dplyr::filter(subpref_key == !!subpref_key) |>
-    dplyr::mutate(sigla_orgao = as.character(sigla_orgao))
-
-  if (nrow(dfp) == 0) return(NULL)
-
-  total_sub <- sum(dfp$n_processos, na.rm = TRUE)
-
-  dfp <- dfp |>
-    dplyr::mutate(
-      pct = ifelse(total_sub > 0, n_processos / total_sub, 0),
-      sigla_orgao = dplyr::if_else(sigla_orgao != "Outros" & pct < min_pct_outros, "Outros", sigla_orgao)
-    ) |>
-    dplyr::group_by(sigla_orgao) |>
-    dplyr::summarise(n_processos = sum(n_processos), .groups = "drop")
-
-  dfp <- dfp |>
-    dplyr::arrange(dplyr::desc(n_processos)) |>
-    dplyr::mutate(rank = dplyr::row_number()) |>
-    dplyr::mutate(sigla_orgao = dplyr::if_else(sigla_orgao != "Outros" & rank > top_n_legenda, "Outros", sigla_orgao)) |>
-    dplyr::group_by(sigla_orgao) |>
-    dplyr::summarise(n_processos = sum(n_processos), .groups = "drop")
-
-  dfp <- dfp |>
-    dplyr::mutate(sigla_orgao = dplyr::if_else(sigla_orgao == "Outros", outros_label, sigla_orgao))
-
-  levels_leg <- c(orgaos_permitidos, outros_label)
-
-  dfp <- dfp |>
-    dplyr::mutate(sigla_orgao = factor(sigla_orgao, levels = levels_leg))
-
-  anos_txt <- paste(range(anos_processos), collapse = "–")
-
-  ggplot2::ggplot(dfp, ggplot2::aes(y = " ", x = n_processos, fill = sigla_orgao)) +
-    ggplot2::geom_col(width = 0.72, alpha = 0.96) +
-    ggplot2::scale_fill_manual(values = pal_orgao, drop = TRUE, name = "Órgão") +
-    ggplot2::scale_x_continuous(breaks = scales::breaks_pretty(n = 6)) +
-    ggplot2::labs(
-      title = paste0("Processos do orçamento regionalizado por órgão — ", nome_legivel),
-      subtitle = paste0("Quantidade de ações distintas (", anos_txt, ") | Total: ", sum(dfp$n_processos), " processos"),
-      x = "Quantidade de processos (ações)",
-      y = NULL,
-      caption = if (exists("caption_base")) caption_base else NULL
-    ) +
-    tema_local +
-    ggplot2::theme(
-      axis.text.y = ggplot2::element_blank(),
-      axis.ticks.y = ggplot2::element_blank(),
-      legend.position = "bottom",
-      legend.title = ggplot2::element_text(size = 10, face = "bold"),
-      legend.text  = ggplot2::element_text(size = 8),
-      legend.key.size = grid::unit(0.35, "cm")
-    ) +
-    ggplot2::guides(
-      fill = ggplot2::guide_legend(
-        nrow = 1,
-        byrow = TRUE,
-        override.aes = list(alpha = 1)
-      )
-    )
-}
-
-cat("WD:", getwd(), "\n")
-cat("pasta_out:", normalizePath(pasta_out, winslash = "/", mustWork = FALSE), "\n")
-cat("df_sum nrow:", nrow(df_sum), "\n")
-cat("df_sum subprefs (keys):", dplyr::n_distinct(df_sum$subpref_key), "\n")
-
-n_ok <- 0
-
-purrr::walk(subprefs_key, function(k) {
-  tryCatch({
-    p <- plot_subpref(k)
-    if (is.null(p)) return(invisible(NULL))
-
-    sig <- df_siglas_key$sigla[match(k, df_siglas_key$subpref_key)]
-    if (length(sig) != 1 || is.na(sig) || sig == "") sig <- k
-
-    arq <- file.path(pasta_out, paste0("processos_regionalizacao_", sig, ".png"))
-
-    ggplot2::ggsave(
-      filename = arq,
-      plot = p,
-      width = 14,
-      height = 4.8,
-      dpi = 300,
-      limitsize = FALSE
-    )
-
-    n_ok <<- n_ok + 1
-  }, error = function(e) {
-    nm <- df_siglas_key$subprefeitura[match(k, df_siglas_key$subpref_key)]
-    message("Erro ao exportar [", nm, "]: ", conditionMessage(e))
-  })
-})
-
-cat("✅ Gráficos exportados:", n_ok, "de", length(subprefs_key), "\n")
-cat("📁 Pasta:", pasta_out, "\n")
-```
-
-
-## código alternativa se o empilhado na horizontal der errado 
-```{r composicao_subprefeituras, echo=FALSE, message=FALSE, warning=FALSE}
-# ============================================================================
-# Composição (4 gráficos) por subprefeitura (sem agrupamentos de órgãos)
-# - Barras vertical + barras horizontal + pie + donut
-# - Usa as mesmas bases já lidas (funções/objetos do seu script), mas RECRIA
-#   um df "full" sem colapsar em "Outros"
-# - Exporta PNGs em:
-#   C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown/resultados/graficos_composicao_subprefeituras_sem_agrupamentos
-# ============================================================================
-
-# --- checagens mínimas (reaproveita o que já existe no seu Rmd) ---
-if (!exists("df_siglas")) stop("Objeto `df_siglas` não encontrado (chunk df_siglas).")
-if (!exists("ler_base_processos")) stop("Função `ler_base_processos` não encontrada (chunk graficos_processos_subprefeituras).")
-if (!exists("arquivos_anos")) stop("Objeto `arquivos_anos` não encontrado (chunk graficos_processos_subprefeituras).")
-if (!exists("anos_processos")) stop("Objeto `anos_processos` não encontrado (chunk graficos_processos_subprefeituras).")
-if (!exists("norm_name")) stop("Função `norm_name` não encontrada (chunk funcao_norm_name).")
-
-suppressPackageStartupMessages({
-  library(dplyr)
-  library(ggplot2)
-  library(scales)
-  library(gridExtra)
-  library(forcats)
-})
-
-# --- parâmetros (ajuste se quiser) ---
-pasta_out_comp <- "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown/resultados/graficos_composicao_subprefeituras_sem_agrupamentos"
-if (!dir.exists(pasta_out_comp)) dir.create(pasta_out_comp, recursive = TRUE)
-
-# métrica para barras (escolha 1):
-#   "n_processos"  -> quantidade de ações distintas
-#   "valor_total"  -> soma do orçamento (valor)
-metrica_barras <- "n_processos"
-
-# --- base FULL (sem colapsar órgãos em "Outros") ---
-df_proc_full <- purrr::map_dfr(
-  anos_processos,
-  ~ ler_base_processos(arquivos_anos[as.character(.x)], .x)
-)
-
-df_sum_full <- df_proc_full |>
-  dplyr::group_by(subpref_key, sigla_orgao) |>
-  dplyr::summarise(
-    n_processos = dplyr::n_distinct(acao),
-    valor_total = sum(valor, na.rm = TRUE),
-    .groups = "drop"
-  ) |>
-  dplyr::filter(n_processos > 0)
-
-df_siglas_key_full <- df_siglas |>
-  dplyr::mutate(subpref_key = norm_name(subprefeitura))
-
-subprefs_key_full <- df_siglas_key_full$subpref_key
-
-# --- paleta fixa global (1 cor por órgão encontrado) ---
-orgaos_todos <- sort(unique(df_sum_full$sigla_orgao))
-
-pal_orgao_full <- if (exists("pal_orgao")) pal_orgao else c()
-faltando_full <- setdiff(orgaos_todos, names(pal_orgao_full))
-if (length(faltando_full) > 0) {
-  extra <- scales::hue_pal(l = 60, c = 100)(length(faltando_full))
-  names(extra) <- faltando_full
-  pal_orgao_full <- c(pal_orgao_full, extra)
-}
-
-tema_local_comp <- if (exists("tema_barras")) tema_barras else ggplot2::theme_bw(base_size = 11)
-
-plot_composicao_subpref <- function(k) {
-  nome_legivel <- df_siglas_key_full$subprefeitura[match(k, df_siglas_key_full$subpref_key)]
-  if (length(nome_legivel) != 1 || is.na(nome_legivel) || nome_legivel == "") nome_legivel <- k
-
-  dfp <- df_sum_full |>
-    dplyr::filter(subpref_key == !!k) |>
-    dplyr::mutate(sigla_orgao = as.character(sigla_orgao))
-
-  if (nrow(dfp) == 0) return(NULL)
-
-  if (!metrica_barras %in% c("n_processos", "valor_total")) stop("`metrica_barras` inválida.")
-  dfp <- dfp |>
-    dplyr::mutate(metrica = .data[[metrica_barras]])
-
-  total_m <- sum(dfp$metrica, na.rm = TRUE)
-  dfp <- dfp |>
-    dplyr::mutate(
-      prop = ifelse(total_m > 0, metrica / total_m, 0),
-      sigla_orgao = forcats::fct_reorder(sigla_orgao, metrica, .desc = TRUE)
-    )
-
-  anos_txt <- paste(range(anos_processos), collapse = "–")
-  subt <- if (metrica_barras == "n_processos") {
-    paste0("Qtd. de ações distintas (", anos_txt, ") | Total: ", sum(dfp$n_processos), " processos")
-  } else {
-    paste0(
-      "Soma do orçamento (", anos_txt, ") | Total: ",
-      scales::label_number(scale_cut = scales::cut_short_scale())(sum(dfp$valor_total, na.rm = TRUE))
-    )
-  }
-
-  g_bar_v <- ggplot2::ggplot(dfp, ggplot2::aes(x = sigla_orgao, y = metrica, fill = sigla_orgao)) +
-    ggplot2::geom_col(alpha = 0.95, show.legend = TRUE) +
-    ggplot2::scale_fill_manual(values = pal_orgao_full, limits = levels(dfp$sigla_orgao), drop = FALSE) +
-    ggplot2::scale_y_continuous(labels = scales::label_number(big.mark = ".", decimal.mark = ",")) +
-    ggplot2::labs(
-      title = paste0("Composição por órgão — ", nome_legivel),
-      subtitle = subt,
-      x = "Órgão",
-      y = ifelse(metrica_barras == "n_processos", "Processos (ações)", "Valor total"),
-      fill = "Órgão"
-    ) +
-    tema_local_comp +
-    ggplot2::theme(
-      legend.position = "bottom",
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1, vjust = 1)
-    )
-
-  g_bar_h <- ggplot2::ggplot(dfp, ggplot2::aes(x = sigla_orgao, y = metrica, fill = sigla_orgao)) +
-    ggplot2::geom_col(alpha = 0.95, show.legend = TRUE) +
-    ggplot2::coord_flip() +
-    ggplot2::scale_fill_manual(values = pal_orgao_full, limits = levels(dfp$sigla_orgao), drop = FALSE) +
-    ggplot2::scale_y_continuous(labels = scales::label_number(big.mark = ".", decimal.mark = ",")) +
-    ggplot2::labs(
-      title = "Barras (horizontal)",
-      x = NULL,
-      y = ifelse(metrica_barras == "n_processos", "Processos (ações)", "Valor total"),
-      fill = "Órgão"
-    ) +
-    tema_local_comp +
-    ggplot2::theme(legend.position = "bottom")
-
-  g_pie <- ggplot2::ggplot(dfp, ggplot2::aes(x = "", y = prop, fill = sigla_orgao)) +
-    ggplot2::geom_col(color = "white", linewidth = 0.2, show.legend = TRUE) +
-    ggplot2::geom_text(
-      ggplot2::aes(label = scales::label_percent(accuracy = 0.1)(prop)),
-      position = ggplot2::position_stack(vjust = 0.5),
-      color = "white",
-      size = 2.8
-    ) +
-    ggplot2::scale_fill_manual(values = pal_orgao_full, limits = levels(dfp$sigla_orgao), drop = FALSE) +
-    ggplot2::coord_polar(theta = "y", start = 0) +
-    ggplot2::theme_void() +
-    ggplot2::labs(title = "Pie (participação)", fill = "Órgão") +
-    ggplot2::theme(legend.position = "bottom")
-
-  g_donut <- ggplot2::ggplot(dfp, ggplot2::aes(x = 2, y = prop, fill = sigla_orgao)) +
-    ggplot2::geom_col(color = "white", linewidth = 0.2, show.legend = TRUE) +
-    ggplot2::geom_text(
-      ggplot2::aes(label = scales::label_percent(accuracy = 0.1)(prop)),
-      position = ggplot2::position_stack(vjust = 0.5),
-      color = "white",
-      size = 2.4
-    ) +
-    ggplot2::scale_fill_manual(values = pal_orgao_full, limits = levels(dfp$sigla_orgao), drop = FALSE) +
-    ggplot2::coord_polar(theta = "y", start = 0) +
-    xlim(-0.5, 2.5) +
-    ggplot2::theme_void() +
-    ggplot2::labs(title = "Donut (participação)", fill = "Órgão") +
-    ggplot2::theme(legend.position = "bottom")
-
-  gridExtra::arrangeGrob(g_bar_v, g_bar_h, g_pie, g_donut, nrow = 2)
-}
-
-n_ok_comp <- 0
-
-purrr::walk(subprefs_key_full, function(k) {
-  g <- tryCatch(plot_composicao_subpref(k), error = function(e) { message("Erro [", k, "]: ", conditionMessage(e)); NULL })
-  if (is.null(g)) return(invisible(NULL))
-
-  sig <- df_siglas_key_full$sigla[match(k, df_siglas_key_full$subpref_key)]
-  if (length(sig) != 1 || is.na(sig) || sig == "") sig <- k
-
-  arq <- file.path(pasta_out_comp, paste0("composicao_orgaos_", sig, ".png"))
-  ggplot2::ggsave(filename = arq, plot = g, width = 16, height = 10, dpi = 300, limitsize = FALSE)
-
-  n_ok_comp <<- n_ok_comp + 1
-})
-
-cat("✅ Composições exportadas:", n_ok_comp, "de", length(subprefs_key_full), "\n")
-cat("📁 Pasta:", pasta_out_comp, "\n")
-```
-
-## Conclusão
+Essa etapa consolida o processo e formaliza a entrega técnica para uso institucional.
 
 
 ```{r conclusao_final, echo=FALSE, message=FALSE, warning=FALSE}
