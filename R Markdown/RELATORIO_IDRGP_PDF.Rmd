@@ -1,0 +1,571 @@
+---
+title: "IDRGP — Relatório em PDF"
+subtitle: "Análise do Ciclo PPA 2022–2025"
+author: "SEPLAN/SIME/CPMA — Prefeitura de São Paulo"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+lang: "pt-BR"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+    latex_engine: xelatex
+    keep_tex: true
+geometry: margin=2.2cm
+fontsize: 11pt
+linestretch: 1.15
+df_print: kable
+header-includes:
+  - \usepackage{float}
+  - \usepackage{booktabs}
+  - \usepackage{longtable}
+  - \usepackage{array}
+  - \usepackage{caption}
+  - \captionsetup{font=small,labelfont=bf}
+params:
+  pasta_saida: "resultados"
+  incluir_codigo: false
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  out.width = "\\linewidth",
+  out.height = "0.85\\textheight"
+)
+```
+
+```{r libs, include=FALSE}
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(scales)
+library(knitr)
+library(purrr)
+library(janitor)
+
+kbl_latex <- function(x, caption = NULL, digits = NULL) {
+  args <- list(
+    x = x,
+    format = "latex",
+    booktabs = TRUE,
+    longtable = TRUE,
+    caption = caption
+  )
+  if (!is.null(digits)) args$digits <- digits
+  do.call(knitr::kable, args)
+}
+```
+
+# Como ler este relatório
+
+Este PDF foi feito para qualquer pessoa, mesmo sem conhecimento de programação.
+
+- **O que você vai ver:** mapas e gráficos que comparam **o que foi gasto** em cada subprefeitura com **o que seria esperado** pelo índice de vulnerabilidade (IVU 2025).
+- **Por que isso importa:** ajuda a verificar se o gasto público está chegando mais onde há mais necessidade.
+
+# O que é o IDRGP (explicação simples)
+
+O **IDRGP** compara duas coisas:
+
+1) **IDRGP Alvo (o esperado):** uma “fatia” do orçamento para cada subprefeitura, baseada no **IVU 2025** (quanto maior a vulnerabilidade, maior deveria ser a fatia).
+2) **IDRGP Real (o que aconteceu):** a “fatia” do gasto que de fato foi executada em cada subprefeitura em um ano.
+
+O relatório mostra a diferença entre o Real e o Alvo.
+
+# Quais dados entram
+
+- Execução orçamentária regionalizada (anos 2022 a 2025)
+- IVU 2025 (para calcular o IDRGP Alvo)
+- Mapa das subprefeituras (GeoSampa)
+
+> Observação: este PDF assume que o processamento já foi executado e gerou arquivos na pasta `resultados/` (mapas, gráficos e planilhas).
+
+# Checklist de arquivos gerados
+
+Este relatório “puxa” tudo da pasta `resultados/`. O checklist abaixo garante transparência do que já foi produzido pelo processamento e do que ainda falta gerar.
+
+```{r checklist_arquivos, results='asis'}
+## Este chunk roda antes dos demais: (re)define objetos base aqui.
+pasta_saida <- params$pasta_saida
+if (!dir.exists(pasta_saida)) dir.create(pasta_saida)
+
+pngs_esperados <- c(
+  "mapa1_idrgp_2022.png",
+  "mapa2_idrgp_2023.png",
+  "mapa3_idrgp_2024.png",
+  "mapa4_idrgp_2025.png",
+  "mapa5_idrgp_agregado_2022_2025.png",
+  "grafico1_idrgp_2025_pct.png",
+  "grafico2_idrgp_agregado_pct.png",
+  "grafico3_idrgp_2025_reais.png",
+  "grafico4_serie_2022_2025.png"
+)
+
+arquivos_esperados <- c(
+  pngs_esperados,
+  paste0("regionalizacao_acoes_", 2022:2025, ".xlsx"),
+  "tabela_teste_estatistico_2025.xlsx",
+  "df_integrado_2025.xlsx",
+  "df_ciclo_2022_2025.xlsx"
+)
+
+paths_all <- file.path(pasta_saida, arquivos_esperados)
+ok <- file.exists(paths_all)
+
+df_chk <- tibble::tibble(
+  arquivo = arquivos_esperados,
+  existe = if_else(ok, "OK", "FALTANDO")
+)
+
+kbl_latex(df_chk, caption = "Checklist de arquivos esperados em `resultados/`") |> print()
+
+if (any(!ok)) {
+  cat("\n\\textbf{Atenção:} há arquivos faltando. Rode/\"Knit\" o `IDRGP_2025.Rmd` para gerar tudo.\n\n")
+}
+```
+
+# Resultados principais (mapas e gráficos)
+
+```{r caminhos_arquivos_pdf}
+pasta_saida <- params$pasta_saida
+if (!dir.exists(pasta_saida)) dir.create(pasta_saida)
+
+pngs_esperados <- c(
+  "mapa1_idrgp_2022.png",
+  "mapa2_idrgp_2023.png",
+  "mapa3_idrgp_2024.png",
+  "mapa4_idrgp_2025.png",
+  "mapa5_idrgp_agregado_2022_2025.png",
+  "grafico1_idrgp_2025_pct.png",
+  "grafico2_idrgp_agregado_pct.png",
+  "grafico3_idrgp_2025_reais.png",
+  "grafico4_serie_2022_2025.png"
+)
+
+paths_png <- file.path(pasta_saida, pngs_esperados)
+```
+
+## Mapas (visão territorial)
+
+Os mapas mostram cada subprefeitura classificada em 3 grupos:
+
+- **Acima do IDRGP Alvo:** recebeu mais do que o esperado.
+- **Dentro do IDRGP Alvo:** ficou dentro do intervalo considerado “normal”.
+- **Abaixo do IDRGP Alvo:** recebeu menos do que o esperado.
+
+Os mapas abaixo foram exportados pelo processamento (arquivo `IDRGP_2025.Rmd`) e inseridos no PDF sem reprocessar os dados.
+
+```{r mapas_pdf, fig.cap="Mapas do IDRGP por ano e no ciclo 2022–2025.", fig.pos='H', fig.show='hold'}
+tem_todos <- all(file.exists(paths_png[1:5]))
+if (tem_todos) {
+  knitr::include_graphics(paths_png[1:5])
+} else {
+  cat("Ainda não encontrei todos os mapas em `resultados/`.\n",
+      "Gere o HTML primeiro (Knit no `IDRGP_2025.Rmd`) para criar os PNGs.\n")
+}
+```
+
+## Gráficos (visão comparativa)
+
+Os gráficos ajudam a comparar:
+
+- **Alvo vs Real** em percentual
+- **Valores executados** em reais (R$)
+- **Evolução 2022–2025**
+
+Assim como os mapas, estes gráficos são os PNGs já exportados para `resultados/` e apenas incorporados aqui para padronização e leitura.
+
+```{r graficos_pdf, fig.cap="Gráficos do IDRGP (percentual, valores absolutos e série histórica).", fig.pos='H', fig.show='hold'}
+tem_todos <- all(file.exists(paths_png[6:9]))
+if (tem_todos) {
+  knitr::include_graphics(paths_png[6:9])
+} else {
+  cat("Ainda não encontrei todos os gráficos em `resultados/`.\n",
+      "Gere o HTML primeiro (Knit no `IDRGP_2025.Rmd`) para criar os PNGs.\n")
+}
+```
+
+# Regionalização das ações (explicação simples)
+
+Nem todo gasto vem “marcado” com uma subprefeitura. Quando o gasto está marcado, chamamos de **regionalizado**.
+
+- Se um gasto **não** está regionalizado, ele entra como “sem território” e não ajuda a comparar subprefeituras.
+- Por isso, o relatório também mostra o quanto do orçamento de cada ano está regionalizado.
+
+Nesta seção, o relatório apresenta (i) um resumo do quanto do orçamento do ano é regionalizado e (ii) uma lista das ações mais regionalizadas (por valor), para dar contexto sobre a qualidade territorial da base.
+
+```{r regionalizacao_tabelas}
+arquivos_reg <- file.path(pasta_saida, paste0("regionalizacao_acoes_", 2022:2025, ".xlsx"))
+if (all(file.exists(arquivos_reg))) {
+  cat("Foram geradas planilhas com todas as ações por ano:\n\n")
+  for (p in arquivos_reg) cat("- ", p, "\n", sep = "")
+} else {
+  cat("As planilhas de regionalização por ano ainda não existem em `resultados/`.\n",
+      "Elas são geradas quando você roda o `IDRGP_2025.Rmd`.\n")
+}
+```
+
+## Regionalização — resumo e TOP 15 por ano (tabelas)
+
+```{r regionalizacao_tabelas_pdf, results='asis'}
+arquivos_reg <- file.path(pasta_saida, paste0("regionalizacao_acoes_", 2022:2025, ".xlsx"))
+
+if (all(file.exists(arquivos_reg))) {
+  for (i in seq_along(arquivos_reg)) {
+    ano <- 2021 + i
+    df_ano <- readxl::read_xlsx(arquivos_reg[i])
+
+    resumo_ano <- df_ano |>
+      summarise(
+        `N ações` = dplyr::n(),
+        `Valor total` = sum(valor_total, na.rm = TRUE),
+        `Valor regionalizado` = sum(valor_regionalizado, na.rm = TRUE),
+        `% regionalizado` = if_else(sum(valor_total, na.rm = TRUE) > 0,
+                                   sum(valor_regionalizado, na.rm = TRUE) / sum(valor_total, na.rm = TRUE),
+                                   NA_real_)
+      ) |>
+      mutate(
+        `Valor total` = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(`Valor total`),
+        `Valor regionalizado` = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(`Valor regionalizado`),
+        `% regionalizado` = label_percent(accuracy = 0.1)(`% regionalizado`)
+      )
+
+    kbl_latex(resumo_ano, caption = paste0("Regionalização por ação — resumo do ano ", ano)) |> print()
+
+    top15 <- df_ano |>
+      filter(!is.na(perc_regionalizado)) |>
+      arrange(desc(perc_regionalizado), desc(valor_total)) |>
+      slice_head(n = 15) |>
+      transmute(
+        `Projeto/atividade` = descricao_proj_ativ,
+        `Valor total` = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+        `% regionalizado` = label_percent(accuracy = 0.1)(perc_regionalizado),
+        `N subpref (regionalizado)` = n_subpref
+      )
+
+    kbl_latex(top15, caption = paste0("Top 15 ações com maior regionalização (por valor) — ", ano)) |> print()
+
+    if (i < length(arquivos_reg)) cat("\n\\newpage\n\n")
+  }
+} else {
+  cat("Não encontrei as planilhas `regionalizacao_acoes_*.xlsx` em `resultados/`.\n")
+}
+```
+
+## Resumo de regionalização (por ano)
+
+```{r resumo_regionalizacao_pdf}
+arquivos_reg <- file.path(pasta_saida, paste0("regionalizacao_acoes_", 2022:2025, ".xlsx"))
+
+if (all(file.exists(arquivos_reg))) {
+  df_reg <- purrr::map2_dfr(arquivos_reg, 2022:2025, \(p, ano) {
+    readxl::read_xlsx(p) |>
+      mutate(ano = as.integer(ano))
+  })
+
+  resumo_reg <- df_reg |>
+    group_by(ano) |>
+    summarise(
+      valor_total = sum(valor_total, na.rm = TRUE),
+      valor_regionalizado = sum(valor_regionalizado, na.rm = TRUE),
+      perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_),
+      .groups = "drop"
+    ) |>
+    mutate(
+      valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+      valor_regionalizado = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_regionalizado),
+      perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
+    )
+
+  kbl_latex(resumo_reg, caption = "Regionalização do orçamento (por valor) — resumo por ano") |> print()
+} else {
+  cat("Não encontrei as planilhas `regionalizacao_acoes_*.xlsx` em `resultados/`.\n")
+}
+```
+
+## Ações com maior regionalização (Top 15 por ano)
+
+```{r top_regionalizacao_pdf}
+arquivos_reg <- file.path(pasta_saida, paste0("regionalizacao_acoes_", 2022:2025, ".xlsx"))
+
+if (all(file.exists(arquivos_reg))) {
+  for (i in seq_along(arquivos_reg)) {
+    ano <- 2021 + i
+    df_ano <- readxl::read_xlsx(arquivos_reg[i])
+
+    top15 <- df_ano |>
+      filter(!is.na(perc_regionalizado)) |>
+      arrange(desc(perc_regionalizado), desc(valor_total)) |>
+      slice_head(n = 15) |>
+      transmute(
+        `Projeto/atividade` = descricao_proj_ativ,
+        `Valor total` = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+        `% regionalizado` = label_percent(accuracy = 0.1)(perc_regionalizado),
+        `N subpref (regionalizado)` = n_subpref
+      )
+
+    kbl_latex(top15, caption = paste0("Top 15 ações com maior regionalização (por valor) — ", ano)) |> print()
+    if (i < length(arquivos_reg)) cat("\n\\newpage\n")
+  }
+} else {
+  cat("Não encontrei as planilhas `regionalizacao_acoes_*.xlsx` em `resultados/`.\n")
+}
+```
+
+# Testes estatísticos (o que significa, sem “matematiquês”)
+
+O relatório usa testes estatísticos para evitar conclusões apressadas.
+
+- Primeiro ele checa se as diferenças (Real – Alvo) parecem seguir um padrão “normal” (Teste KS).
+- Depois escolhe automaticamente um teste:
+  - **t pareado** (quando a distribuição é mais “normal”)
+  - **Wilcoxon pareado** (quando não é)
+
+Com isso, ele calcula um **intervalo de confiança (95%)**:
+
+- Se a diferença de uma subprefeitura fica **abaixo** do intervalo: “Abaixo do alvo”.
+- Se fica **acima**: “Acima do alvo”.
+- Se fica **dentro**: “Dentro do alvo”.
+
+# Capítulo 7 — Verificação da qualidade (tabelas)
+
+Esta seção consolida, em tabelas, a checagem de consistência do **IDRGP Alvo** (se soma 100% e se cobre as 32 subprefeituras).
+
+```{r cap7_qualidade, results='asis'}
+arq_int <- file.path(pasta_saida, "df_integrado_2025.xlsx")
+
+if (file.exists(arq_int)) {
+  df_int <- readxl::read_xlsx(arq_int) |>
+    mutate(
+      idrgp_alvo = as.numeric(idrgp_alvo),
+      idrgp_real = as.numeric(idrgp_real),
+      idrgp_diferenca = as.numeric(idrgp_diferenca)
+    )
+
+  df_alvo <- df_int |>
+    distinct(subprefeitura, idrgp_alvo) |>
+    arrange(desc(idrgp_alvo))
+
+  soma <- sum(df_alvo$idrgp_alvo, na.rm = TRUE)
+  n_sp <- n_distinct(df_alvo$subprefeitura)
+
+  resumo <- tibble::tibble(
+    Indicador = c("Soma do IDRGP Alvo", "N subprefeituras (alvo)"),
+    Valor = c(round(soma, 6), n_sp)
+  )
+
+  kbl_latex(resumo, caption = "Checagem rápida — IDRGP Alvo (2025)") |> print()
+  kbl_latex(
+    df_alvo |>
+      mutate(idrgp_alvo = label_percent(accuracy = 0.01)(idrgp_alvo)) |>
+      rename(Subprefeitura = subprefeitura, `IDRGP Alvo` = idrgp_alvo),
+    caption = "IDRGP Alvo por subprefeitura (2025)"
+  ) |> print()
+} else {
+  cat("Não encontrei `df_integrado_2025.xlsx` em `resultados/`.\n")
+}
+```
+
+## IDRGP Alvo 2025 (baseado no IVU 2024)
+
+Esta tabela é a “planilha-base” do relatório: ela transforma o **IVU** em uma distribuição proporcional (soma 100%) indicando quanto cada subprefeitura **deveria** receber, em termos relativos, para fins de comparação com o gasto executado.
+
+```{r idrgp_alvo_pdf, results='asis'}
+arq_ivu <- file.path("dados", "ivu_subprefeituras_2025.xlsx")
+
+if (file.exists(arq_ivu)) {
+  df_ivu <- readxl::read_xlsx(arq_ivu) |>
+    janitor::clean_names()
+
+  # tenta localizar as colunas esperadas (robusto a pequenas variações)
+  nm <- names(df_ivu)
+  col_nome <- nm[which(grepl("nome_subpref|subpref", nm))[1]]
+  col_ivu  <- nm[which(grepl("ivu_geral|ivu", nm))[1]]
+
+  if (any(is.na(c(col_nome, col_ivu)))) {
+    cat("Não consegui identificar as colunas de subprefeitura e IVU em `", arq_ivu, "`.\n", sep = "")
+  } else {
+    df_idrgp_alvo <- df_ivu |>
+      transmute(
+        subprefeitura = as.character(.data[[col_nome]]),
+        ivu_geral = suppressWarnings(as.numeric(.data[[col_ivu]]))
+      ) |>
+      mutate(
+        subprefeitura = str_replace_all(subprefeitura, "^Subprefeitura de ", ""),
+        subprefeitura = str_replace_all(subprefeitura, "^Subprefeitura ", ""),
+        subprefeitura = case_when(
+          subprefeitura == "São Miguel" ~ "São Miguel Paulista",
+          subprefeitura == "Perus"      ~ "Perus/Anhanguera",
+          subprefeitura == "Itaim"      ~ "Itaim Paulista",
+          TRUE ~ subprefeitura
+        ),
+        subprefeitura = str_squish(subprefeitura),
+        idrgp_alvo = ivu_geral / sum(ivu_geral, na.rm = TRUE)
+      ) |>
+      select(subprefeitura, idrgp_alvo) |>
+      arrange(desc(idrgp_alvo)) |>
+      mutate(idrgp_alvo = label_percent(accuracy = 0.01)(idrgp_alvo))
+
+    kbl_latex(
+      df_idrgp_alvo |>
+        rename(Subprefeitura = subprefeitura, `IDRGP Alvo` = idrgp_alvo),
+      caption = "IDRGP Alvo 2025 (baseado no IVU 2024)"
+    ) |> print()
+  }
+} else {
+  cat("Não encontrei `dados/ivu_subprefeituras_2025.xlsx`.\n")
+}
+```
+
+## Resultados estatísticos (2025)
+
+Aqui é apresentada a “decisão automática” de método (t pareado ou Wilcoxon), o resultado do teste de normalidade (KS) e o intervalo de confiança (IC 95%) usado para classificar as subprefeituras no mapa/diagnóstico de 2025.
+
+```{r estatisticas_2025_pdf}
+arq_est <- file.path(pasta_saida, "tabela_teste_estatistico_2025.xlsx")
+if (file.exists(arq_est)) {
+  est <- readxl::read_xlsx(arq_est)
+  est_fmt <- est |>
+    transmute(
+      `Método` = toupper(metodo),
+      `p-valor` = formatC(p_valor, format = "e", digits = 2),
+      `Estimativa central` = round(estimativa_central, 6),
+      `IC 95% (inf)` = round(ic_inferior_95pct, 6),
+      `IC 95% (sup)` = round(ic_superior_95pct, 6),
+      `KS D` = round(ks_D, 4),
+      `KS p` = formatC(ks_p, format = "e", digits = 2),
+      `N subpref` = n
+    )
+  kbl_latex(est_fmt, caption = "Teste estatístico do IDRGP (2025)") |> print()
+} else {
+  cat("Não encontrei `tabela_teste_estatistico_2025.xlsx` em `resultados/`.\n")
+}
+```
+
+## Subprefeituras (2025): Alvo vs Real (resumo)
+
+Para facilitar a leitura gerencial, este bloco resume as 10 subprefeituras com maior e menor diferença entre o **Real** e o **Alvo** em 2025 (sem expor o código, apenas o resultado).
+
+```{r resumo_integrado_2025_pdf}
+arq_int <- file.path(pasta_saida, "df_integrado_2025.xlsx")
+if (file.exists(arq_int)) {
+  df_int <- readxl::read_xlsx(arq_int)
+
+  df_int2 <- df_int |>
+    mutate(
+      idrgp_alvo = as.numeric(idrgp_alvo),
+      idrgp_real = as.numeric(idrgp_real),
+      idrgp_diferenca = as.numeric(idrgp_diferenca),
+      valor = as.numeric(valor),
+      valor_previsto = as.numeric(valor_previsto)
+    )
+
+  top_acima <- df_int2 |>
+    arrange(desc(idrgp_diferenca)) |>
+    slice_head(n = 10) |>
+    transmute(
+      Subprefeitura = subprefeitura,
+      `IDRGP alvo` = label_percent(accuracy = 0.1)(idrgp_alvo),
+      `IDRGP real` = label_percent(accuracy = 0.1)(idrgp_real),
+      `Diferença (real - alvo)` = label_percent(accuracy = 0.1)(idrgp_diferenca),
+      `Status (IC 95%)` = status_estatistico
+    )
+
+  top_abaixo <- df_int2 |>
+    arrange(idrgp_diferenca) |>
+    slice_head(n = 10) |>
+    transmute(
+      Subprefeitura = subprefeitura,
+      `IDRGP alvo` = label_percent(accuracy = 0.1)(idrgp_alvo),
+      `IDRGP real` = label_percent(accuracy = 0.1)(idrgp_real),
+      `Diferença (real - alvo)` = label_percent(accuracy = 0.1)(idrgp_diferenca),
+      `Status (IC 95%)` = status_estatistico
+    )
+
+  kbl_latex(top_acima, caption = "Top 10 subprefeituras com maior (real - alvo) — 2025") |> print()
+  cat("\n\\newpage\n")
+  kbl_latex(top_abaixo, caption = "Top 10 subprefeituras com menor (real - alvo) — 2025") |> print()
+} else {
+  cat("Não encontrei `df_integrado_2025.xlsx` em `resultados/`.\n")
+}
+```
+
+## Balanço do ciclo 2022–2025 (resumo)
+
+Este bloco repete a lógica do resumo, mas no agregado 2022–2025 (ciclo do PPA), permitindo identificar padrões persistentes.
+
+```{r resumo_ciclo_pdf}
+arq_ciclo <- file.path(pasta_saida, "df_ciclo_2022_2025.xlsx")
+if (file.exists(arq_ciclo)) {
+  df_ciclo <- readxl::read_xlsx(arq_ciclo)
+  df_ciclo2 <- df_ciclo |>
+    mutate(
+      idrgp_alvo = as.numeric(idrgp_alvo),
+      idrgp_real_2022_a_2025 = as.numeric(idrgp_real_2022_a_2025),
+      idrgp_diferenca_ciclo = as.numeric(idrgp_diferenca_ciclo),
+      valor_2022_a_2025 = as.numeric(valor_2022_a_2025)
+    )
+
+  top_acima <- df_ciclo2 |>
+    arrange(desc(idrgp_diferenca_ciclo)) |>
+    slice_head(n = 10) |>
+    transmute(
+      Subprefeitura = subprefeitura,
+      `IDRGP alvo` = label_percent(accuracy = 0.1)(idrgp_alvo),
+      `IDRGP real (ciclo)` = label_percent(accuracy = 0.1)(idrgp_real_2022_a_2025),
+      `Diferença (real - alvo)` = label_percent(accuracy = 0.1)(idrgp_diferenca_ciclo),
+      `Status (±30%)` = status_ciclo
+    )
+
+  top_abaixo <- df_ciclo2 |>
+    arrange(idrgp_diferenca_ciclo) |>
+    slice_head(n = 10) |>
+    transmute(
+      Subprefeitura = subprefeitura,
+      `IDRGP alvo` = label_percent(accuracy = 0.1)(idrgp_alvo),
+      `IDRGP real (ciclo)` = label_percent(accuracy = 0.1)(idrgp_real_2022_a_2025),
+      `Diferença (real - alvo)` = label_percent(accuracy = 0.1)(idrgp_diferenca_ciclo),
+      `Status (±30%)` = status_ciclo
+    )
+
+  kbl_latex(top_acima, caption = "Top 10 subprefeituras com maior (real - alvo) — ciclo 2022–2025") |> print()
+  cat("\n\\newpage\n")
+  kbl_latex(top_abaixo, caption = "Top 10 subprefeituras com menor (real - alvo) — ciclo 2022–2025") |> print()
+} else {
+  cat("Não encontrei `df_ciclo_2022_2025.xlsx` em `resultados/`.\n")
+}
+```
+
+# Como gerar este PDF (passo a passo)
+
+1) Abra o projeto no **RStudio**.
+2) Rode/“Knit” o arquivo `IDRGP_2025.Rmd` (isso cria os resultados em `resultados/`).
+3) Instale o suporte a PDF (se necessário): caso o seu RStudio acuse falta de LaTeX, instale `tinytex` e rode `tinytex::install_tinytex()` uma vez.
+
+4) Agora clique em **Knit** neste arquivo: `RELATORIO_IDRGP_PDF.Rmd`.
+
+# Apêndice — Código completo (opcional)
+
+Este apêndice é útil para auditoria/transparência, mas tende a deixar o PDF pesado.
+Para ativar, altere `params$incluir_codigo: true` no YAML.
+
+```{r codigo_completo, results='asis', eval=isTRUE(params$incluir_codigo)}
+arquivo_codigo <- "IDRGP_2025.Rmd"
+if (file.exists(arquivo_codigo)) {
+  linhas <- readLines(arquivo_codigo, warn = FALSE)
+  # Para não quebrar o PDF, removemos o YAML inicial e mostramos o resto como texto.
+  i_inicio <- which(trimws(linhas) == "---")
+  if (length(i_inicio) >= 2) {
+    linhas <- linhas[(i_inicio[2] + 1):length(linhas)]
+  }
+  cat("```text\n")
+  cat(paste(linhas, collapse = "\n"))
+  cat("\n```\n")
+} else {
+  cat("Não encontrei `IDRGP_2025.Rmd` na pasta atual.\n")
+}
+```

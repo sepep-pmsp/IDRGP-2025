@@ -1,0 +1,627 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\documentclass[
+  brazilian,
+  11pt,
+]{article}
+\usepackage{xcolor}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{5}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\usepackage{setspace}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{color}
+\usepackage{fancyvrb}
+\newcommand{\VerbBar}{|}
+\newcommand{\VERB}{\Verb[commandchars=\\\{\}]}
+\DefineVerbatimEnvironment{Highlighting}{Verbatim}{commandchars=\\\{\}}
+% Add ',fontsize=\small' for more characters per line
+\usepackage{framed}
+\definecolor{shadecolor}{RGB}{248,248,248}
+\newenvironment{Shaded}{\begin{snugshade}}{\end{snugshade}}
+\newcommand{\AlertTok}[1]{\textcolor[rgb]{0.94,0.16,0.16}{#1}}
+\newcommand{\AnnotationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\AttributeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\BaseNTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\BuiltInTok}[1]{#1}
+\newcommand{\CharTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\CommentTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\CommentVarTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ConstantTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\ControlFlowTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\DataTypeTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{#1}}
+\newcommand{\DecValTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\DocumentationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\ErrorTok}[1]{\textcolor[rgb]{0.64,0.00,0.00}{\textbf{#1}}}
+\newcommand{\ExtensionTok}[1]{#1}
+\newcommand{\FloatTok}[1]{\textcolor[rgb]{0.00,0.00,0.81}{#1}}
+\newcommand{\FunctionTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\ImportTok}[1]{#1}
+\newcommand{\InformationTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\newcommand{\KeywordTok}[1]{\textcolor[rgb]{0.13,0.29,0.53}{\textbf{#1}}}
+\newcommand{\NormalTok}[1]{#1}
+\newcommand{\OperatorTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\OtherTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{#1}}
+\newcommand{\PreprocessorTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textit{#1}}}
+\newcommand{\RegionMarkerTok}[1]{#1}
+\newcommand{\SpecialCharTok}[1]{\textcolor[rgb]{0.81,0.36,0.00}{\textbf{#1}}}
+\newcommand{\SpecialStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\StringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\VariableTok}[1]{\textcolor[rgb]{0.00,0.00,0.00}{#1}}
+\newcommand{\VerbatimStringTok}[1]{\textcolor[rgb]{0.31,0.60,0.02}{#1}}
+\newcommand{\WarningTok}[1]{\textcolor[rgb]{0.56,0.35,0.01}{\textbf{\textit{#1}}}}
+\usepackage{graphicx}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+% Set default figure placement to htbp
+\def\fps@figure{htbp}
+\makeatother
+\ifLuaTeX
+\usepackage[bidi=basic,shorthands=off]{babel}
+\else
+\usepackage[bidi=default,shorthands=off]{babel}
+\fi
+\ifLuaTeX
+  \usepackage{selnolig} % disable illegal ligatures
+\fi
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{caption}
+\captionsetup{font=small,labelfont=bf}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={IDRGP --- Relatório em PDF},
+  pdfauthor={SEPLAN/SIME/CPMA --- Prefeitura de São Paulo},
+  pdflang={pt-BR},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{IDRGP --- Relatório em PDF}
+\usepackage{etoolbox}
+\makeatletter
+\providecommand{\subtitle}[1]{% add subtitle to \maketitle
+  \apptocmd{\@title}{\par {\large #1 \par}}{}{}
+}
+\makeatother
+\subtitle{Análise do Ciclo PPA 2022--2025}
+\author{SEPLAN/SIME/CPMA --- Prefeitura de São Paulo}
+\date{07/05/2026}
+
+\begin{document}
+\maketitle
+
+{
+\setcounter{tocdepth}{2}
+\tableofcontents
+}
+\setstretch{1.15}
+\section{Como ler este relatório}\label{como-ler-este-relatuxf3rio}
+
+Este PDF foi feito para qualquer pessoa, mesmo sem conhecimento de
+programação.
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{O que você vai ver:} mapas e gráficos que comparam \textbf{o
+  que foi gasto} em cada subprefeitura com \textbf{o que seria esperado}
+  pelo índice de vulnerabilidade (IVU 2025).
+\item
+  \textbf{Por que isso importa:} ajuda a verificar se o gasto público
+  está chegando mais onde há mais necessidade.
+\end{itemize}
+
+\section{O que é o IDRGP (explicação
+simples)}\label{o-que-uxe9-o-idrgp-explicauxe7uxe3o-simples}
+
+O \textbf{IDRGP} compara duas coisas:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi})}
+\tightlist
+\item
+  \textbf{IDRGP Alvo (o esperado):} uma ``fatia'' do orçamento para cada
+  subprefeitura, baseada no \textbf{IVU 2025} (quanto maior a
+  vulnerabilidade, maior deveria ser a fatia).
+\item
+  \textbf{IDRGP Real (o que aconteceu):} a ``fatia'' do gasto que de
+  fato foi executada em cada subprefeitura em um ano.
+\end{enumerate}
+
+O relatório mostra a diferença entre o Real e o Alvo.
+
+\section{Quais dados entram}\label{quais-dados-entram}
+
+\begin{itemize}
+\tightlist
+\item
+  Execução orçamentária regionalizada (anos 2022 a 2025)
+\item
+  IVU 2025 (para calcular o IDRGP Alvo)
+\item
+  Mapa das subprefeituras (GeoSampa)
+\end{itemize}
+
+\begin{quote}
+Observação: este PDF assume que o processamento já foi executado e gerou
+arquivos na pasta \texttt{resultados/} (mapas, gráficos e planilhas).
+\end{quote}
+
+\section{Checklist de arquivos
+gerados}\label{checklist-de-arquivos-gerados}
+
+\begin{longtable}[t]{ll}
+\caption{\label{tab:checklist_arquivos}Checklist de arquivos esperados em `resultados/`}\\
+\toprule
+arquivo & existe\\
+\midrule
+mapa1\_idrgp\_2022.png & OK\\
+mapa2\_idrgp\_2023.png & OK\\
+mapa3\_idrgp\_2024.png & OK\\
+mapa4\_idrgp\_2025.png & OK\\
+mapa5\_idrgp\_agregado\_2022\_2025.png & OK\\
+\addlinespace
+grafico1\_idrgp\_2025\_pct.png & OK\\
+grafico2\_idrgp\_agregado\_pct.png & OK\\
+grafico3\_idrgp\_2025\_reais.png & OK\\
+grafico4\_serie\_2022\_2025.png & OK\\
+regionalizacao\_acoes\_2022.xlsx & OK\\
+\addlinespace
+regionalizacao\_acoes\_2023.xlsx & OK\\
+regionalizacao\_acoes\_2024.xlsx & OK\\
+regionalizacao\_acoes\_2025.xlsx & OK\\
+tabela\_teste\_estatistico\_2025.xlsx & OK\\
+df\_integrado\_2025.xlsx & OK\\
+\addlinespace
+df\_ciclo\_2022\_2025.xlsx & OK\\
+\bottomrule
+\end{longtable}
+
+\section{Resultados principais (mapas e
+gráficos)}\label{resultados-principais-mapas-e-gruxe1ficos}
+
+\subsection{Mapas (visão territorial)}\label{mapas-visuxe3o-territorial}
+
+Os mapas mostram cada subprefeitura classificada em 3 grupos:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Acima do IDRGP Alvo:} recebeu mais do que o esperado.
+\item
+  \textbf{Dentro do IDRGP Alvo:} ficou dentro do intervalo considerado
+  ``normal''.
+\item
+  \textbf{Abaixo do IDRGP Alvo:} recebeu menos do que o esperado.
+\end{itemize}
+
+resultados/mapa1\_idrgp\_2022.png
+
+\newpage
+
+resultados/mapa2\_idrgp\_2023.png
+
+\newpage
+
+resultados/mapa3\_idrgp\_2024.png
+
+\newpage
+
+resultados/mapa4\_idrgp\_2025.png
+
+\newpage
+
+resultados/mapa5\_idrgp\_agregado\_2022\_2025.png
+
+\subsection{Gráficos (visão
+comparativa)}\label{gruxe1ficos-visuxe3o-comparativa}
+
+Os gráficos ajudam a comparar:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Alvo vs Real} em percentual
+\item
+  \textbf{Valores executados} em reais (R\$)
+\item
+  \textbf{Evolução 2022--2025}
+\end{itemize}
+
+resultados/grafico1\_idrgp\_2025\_pct.png
+
+\newpage
+
+resultados/grafico2\_idrgp\_agregado\_pct.png
+
+\newpage
+
+resultados/grafico3\_idrgp\_2025\_reais.png
+
+\newpage
+
+resultados/grafico4\_serie\_2022\_2025.png
+
+\section{Regionalização das ações (explicação
+simples)}\label{regionalizauxe7uxe3o-das-auxe7uxf5es-explicauxe7uxe3o-simples}
+
+Nem todo gasto vem ``marcado'' com uma subprefeitura. Quando o gasto
+está marcado, chamamos de \textbf{regionalizado}.
+
+\begin{itemize}
+\tightlist
+\item
+  Se um gasto \textbf{não} está regionalizado, ele entra como ``sem
+  território'' e não ajuda a comparar subprefeituras.
+\item
+  Por isso, o relatório também mostra o quanto do orçamento de cada ano
+  está regionalizado.
+\end{itemize}
+
+\begin{verbatim}
+## Foram geradas planilhas com todas as ações por ano:
+## 
+## - resultados/regionalizacao_acoes_2022.xlsx
+## - resultados/regionalizacao_acoes_2023.xlsx
+## - resultados/regionalizacao_acoes_2024.xlsx
+## - resultados/regionalizacao_acoes_2025.xlsx
+\end{verbatim}
+
+\subsection{Resumo de regionalização (por
+ano)}\label{resumo-de-regionalizauxe7uxe3o-por-ano}
+
+\begin{verbatim}
+## 
+## \begin{longtable}[t]{rlll}
+## \caption{\label{tab:resumo_regionalizacao_pdf}Regionalização do orçamento (por valor) — resumo por ano}\\
+## \toprule
+## ano & valor\_total & valor\_regionalizado & perc\_regionalizado\\
+## \midrule
+## 2022 & R\$ 74.233.972.013 & R\$ 16.129.553.626 & 21.7\%\\
+## 2023 & R\$ 91.190.652.546 & R\$ 33.321.223.743 & 36.5\%\\
+## 2024 & R\$ 94.485.897.645 & R\$ 45.647.361.712 & 48.3\%\\
+## 2025 & R\$ 103.136.618.407 & R\$ 57.170.300.140 & 55.4\%\\
+## \bottomrule
+## \end{longtable}
+\end{verbatim}
+
+\subsection{Ações com maior regionalização (Top 15 por
+ano)}\label{auxe7uxf5es-com-maior-regionalizauxe7uxe3o-top-15-por-ano}
+
+\begin{verbatim}
+## 
+## \begin{longtable}[t]{lllr}
+## \caption{\label{tab:top_regionalizacao_pdf}Top 15 ações com maior regionalização (por valor) — 2022}\\
+## \toprule
+## Projeto/atividade & Valor total & \% regionalizado & N subpref (regionalizado)\\
+## \midrule
+## Manutenção e Operação da Rede Parceira - Centro de Educação Infantil (CEI) & R\$ 4.553.913.339 & 100.0\% & 31\\
+## Manutenção e Operação de Equipamentos de Proteção Social Especial à População em Situação de Rua & R\$ 497.830.795 & 100.0\% & 32\\
+## Manutenção e Operação de Equipamentos de Convivência e Fortalecimento de Vínculos para Crianças e Adolescentes & R\$ 362.749.440 & 100.0\% & 32\\
+## Manutenção e Operação de Unidades Educacionais - Escola Municipal de Ensino Fundamental (EMEF) & R\$ 320.002.939 & 100.0\% & 32\\
+## Manutenção de Sistemas de Drenagem & R\$ 296.225.531 & 100.0\% & 32\\
+## \addlinespace
+## Construção e Implantação de Centros Educacionais Unificados (CEU) & R\$ 289.379.725 & 100.0\% & 9\\
+## Manutenção e Operação de Centros Educacionais Unificados (CEU) & R\$ 267.551.162 & 100.0\% & 32\\
+## Transferência de Recursos Financeiros para as Unidades Educacionais - Educação Infantil & R\$ 236.665.367 & 100.0\% & 26\\
+## Manutenção e Operação de Áreas Verdes e Vegetação Arbórea & R\$ 235.088.324 & 100.0\% & 32\\
+## Transferência de Recursos Financeiros para as Unidades Educacionais - Ensino Fundamental & R\$ 234.121.719 & 100.0\% & 26\\
+## \addlinespace
+## Manutenção e Operação de Equipamentos de Proteção Social Especial a Crianças, Adolescentes e Jovens em Risco Social & R\$ 226.598.778 & 100.0\% & 32\\
+## Manutenção e Operação de Escolas Municipais de Educação Infantil (EMEI) & R\$ 206.265.630 & 100.0\% & 32\\
+## Manutenção e Operação no Serviço de Guias e Sarjetas (Vias e Logradouros) & R\$ 146.188.754 & 100.0\% & 32\\
+## Manutenção e Operação do Controle e Fiscalização de Tráfego & R\$ 142.974.106 & 100.0\% & 2\\
+## Manutenção e Operação de Centros de Educação Infantil (CEI) & R\$ 141.415.242 & 100.0\% & 32\\
+## \bottomrule
+## \end{longtable}
+## 
+## \newpage
+## 
+## \begin{longtable}[t]{lllr}
+## \caption{\label{tab:top_regionalizacao_pdf}Top 15 ações com maior regionalização (por valor) — 2023}\\
+## \toprule
+## Projeto/atividade & Valor total & \% regionalizado & N subpref (regionalizado)\\
+## \midrule
+## Manutenção e Operação da Rede Parceira - Centro de Educação Infantil (CEI) & R\$ 4.502.867.968 & 100.0\% & 31\\
+## Pavimentação e Recapeamento de Vias & R\$ 3.295.660.300 & 100.0\% & 32\\
+## Intervenções no Sistema de Drenagem & R\$ 1.406.534.523 & 100.0\% & 30\\
+## Programa Pode Entrar & R\$ 1.248.287.708 & 100.0\% & 15\\
+## Intervenção, Urbanização e Melhoria de Bairros - Plano de Obras das Subprefeituras & R\$ 932.541.922 & 100.0\% & 32\\
+## \addlinespace
+## Recuperação e Reforço de Obras de Arte Especiais - OAE & R\$ 748.112.347 & 100.0\% & 22\\
+## Manutenção e Operação de Equipamentos de Proteção Social Especial à População em Situação de Rua & R\$ 514.951.409 & 100.0\% & 30\\
+## Operação Tapa Buraco & R\$ 511.932.639 & 100.0\% & 32\\
+## Manutenção de Sistemas de Drenagem & R\$ 485.613.648 & 100.0\% & 32\\
+## Manutenção e Operação de Equipamentos de Convivência e Fortalecimento de Vínculos para Crianças e Adolescentes & R\$ 363.188.334 & 100.0\% & 32\\
+## \addlinespace
+## Manutenção e Operação de Centros Educacionais Unificados (CEU) & R\$ 327.752.368 & 100.0\% & 32\\
+## Manutenção e Operação de Áreas Verdes e Vegetação Arbórea & R\$ 305.936.337 & 100.0\% & 32\\
+## Manutenção e Operação de Unidades Educacionais - Escola Municipal de Ensino Fundamental (EMEF) & R\$ 277.671.668 & 100.0\% & 32\\
+## Transferência de Recursos Financeiros para as Unidades Educacionais - Ensino Fundamental & R\$ 271.029.017 & 100.0\% & 27\\
+## Manutenção e Operação de Equipamentos de Proteção Social Especial a Crianças, Adolescentes e Jovens em Risco Social & R\$ 263.003.143 & 100.0\% & 32\\
+## \bottomrule
+## \end{longtable}
+## 
+## \newpage
+## 
+## \begin{longtable}[t]{lllr}
+## \caption{\label{tab:top_regionalizacao_pdf}Top 15 ações com maior regionalização (por valor) — 2024}\\
+## \toprule
+## Projeto/atividade & Valor total & \% regionalizado & N subpref (regionalizado)\\
+## \midrule
+## Manutenção e Operação da Rede Parceira - Centro de Educação Infantil (CEI) & R\$ 5.528.878.637 & 100.0\% & 30\\
+## Compensações Tarifárias do Sistema de Ônibus & R\$ 4.241.289.452 & 100.0\% & 1\\
+## Intervenções no Sistema de Drenagem & R\$ 1.941.523.825 & 100.0\% & 32\\
+## Manutenção de Sistemas de Drenagem & R\$ 603.744.705 & 100.0\% & 32\\
+## Concessão dos Serviços Divisíveis de Limpeza Urbana em Regime Público & R\$ 532.113.714 & 100.0\% & 32\\
+## \addlinespace
+## Manutenção e Operação de Centros Educacionais Unificados (CEU) & R\$ 375.775.774 & 100.0\% & 32\\
+## Manutenção e Operação do Sistema Municipal de Transporte Público & R\$ 356.703.308 & 100.0\% & 1\\
+## Ações Integradas de Segurança Pública - Operação Delegada - Convênio SSP SO & R\$ 342.632.691 & 100.0\% & 31\\
+## Manutenção e Operação de Equipamentos de Proteção Social Especial a Crianças, Adolescentes e Jovens em Risco Social & R\$ 302.114.868 & 100.0\% & 32\\
+## Manutenção e Operação de Equipamentos de Convivência e Fortalecimento de Vínculos para Crianças e Adolescentes & R\$ 300.022.977 & 100.0\% & 32\\
+## \addlinespace
+## Programação de Atividades Culturais & R\$ 299.017.970 & 100.0\% & 32\\
+## Manutenção e Operação de Unidades Educacionais - Escola Municipal de Ensino Fundamental (EMEF) & R\$ 298.450.335 & 100.0\% & 32\\
+## Construção e Implantação de Parques Urbanos e Lineares & R\$ 267.311.739 & 100.0\% & 13\\
+## Manutenção e Operação de Vigilância em Saúde & R\$ 241.054.880 & 100.0\% & 30\\
+## Manutenção e Operação no Serviço de Guias e Sarjetas (Vias e Logradouros) & R\$ 215.062.626 & 100.0\% & 32\\
+## \bottomrule
+## \end{longtable}
+## 
+## \newpage
+## 
+## \begin{longtable}[t]{lllr}
+## \caption{\label{tab:top_regionalizacao_pdf}Top 15 ações com maior regionalização (por valor) — 2025}\\
+## \toprule
+## Projeto/atividade & Valor total & \% regionalizado & N subpref (regionalizado)\\
+## \midrule
+## Compensações Tarifárias do Sistema de Ônibus & R\$ 7.124.529.847 & 100.0\% & 32\\
+## Manutenção e Operação da Rede Parceira - Centro de Educação Infantil (CEI) & R\$ 5.479.255.960 & 100.0\% & 30\\
+## Remuneração dos Profissionais da Educação Básica - Ensino Fundamental & R\$ 2.226.719.424 & 100.0\% & 32\\
+## Sistema Municipal de Regulação, Controle, Avaliação e Auditoria do SUS & R\$ 1.714.693.086 & 100.0\% & 18\\
+## Serviços de Limpeza Urbana - Varrição e Lavagem de Áreas Públicas & R\$ 1.343.405.878 & 100.0\% & 32\\
+## \addlinespace
+## Eletrificação da frota de veículos do Sistema Municipal de Transporte Coletivo & R\$ 1.236.807.895 & 100.0\% & 32\\
+## Programa Pode Entrar & R\$ 1.162.178.834 & 100.0\% & 21\\
+## Remuneração dos Profissionais da Educação Básica - Centro de Educação Infantil (CEI) & R\$ 1.058.018.023 & 100.0\% & 32\\
+## Execução do Programa de Mananciais & R\$ 995.502.944 & 100.0\% & 5\\
+## Intervenções no Sistema de Drenagem & R\$ 870.828.465 & 100.0\% & 30\\
+## \addlinespace
+## Remuneração dos Profissionais da Educação Básica - Escola Municipal de Educação Infantil (EMEI) & R\$ 723.172.262 & 100.0\% & 32\\
+## Concessão dos Serviços Divisíveis de Limpeza Urbana em Regime Público & R\$ 583.023.600 & 100.0\% & 32\\
+## Manutenção de Sistemas de Drenagem & R\$ 574.203.846 & 100.0\% & 32\\
+## Operação Tapa Buraco & R\$ 513.752.716 & 100.0\% & 32\\
+## Pavimentação e Recapeamento de Vias & R\$ 505.536.363 & 100.0\% & 32\\
+## \bottomrule
+## \end{longtable}
+\end{verbatim}
+
+\section{Testes estatísticos (o que significa, sem
+``matematiquês'')}\label{testes-estatuxedsticos-o-que-significa-sem-matematiquuxeas}
+
+O relatório usa testes estatísticos para evitar conclusões apressadas.
+
+\begin{itemize}
+\tightlist
+\item
+  Primeiro ele checa se as diferenças (Real -- Alvo) parecem seguir um
+  padrão ``normal'' (Teste KS).
+\item
+  Depois escolhe automaticamente um teste:
+
+  \begin{itemize}
+  \tightlist
+  \item
+    \textbf{t pareado} (quando a distribuição é mais ``normal'')
+  \item
+    \textbf{Wilcoxon pareado} (quando não é)
+  \end{itemize}
+\end{itemize}
+
+Com isso, ele calcula um \textbf{intervalo de confiança (95\%)}:
+
+\begin{itemize}
+\tightlist
+\item
+  Se a diferença de uma subprefeitura fica \textbf{abaixo} do intervalo:
+  ``Abaixo do alvo''.
+\item
+  Se fica \textbf{acima}: ``Acima do alvo''.
+\item
+  Se fica \textbf{dentro}: ``Dentro do alvo''.
+\end{itemize}
+
+\subsection{Resultados estatísticos
+(2025)}\label{resultados-estatuxedsticos-2025}
+
+\begin{verbatim}
+## 
+## \begin{longtable}[t]{llrrrrlr}
+## \caption{\label{tab:estatisticas_2025_pdf}Teste estatístico do IDRGP (2025)}\\
+## \toprule
+## Método & p-valor & Estimativa central & IC 95\% (inf) & IC 95\% (sup) & KS D & KS p & N subpref\\
+## \midrule
+## T\_PAREADO & 1.00e+00 & 0 & -0.00866 & 0.00866 & 0.1396 & 5.16e-01 & 32\\
+## \bottomrule
+## \end{longtable}
+\end{verbatim}
+
+\subsection{Subprefeituras (2025): Alvo vs Real
+(resumo)}\label{subprefeituras-2025-alvo-vs-real-resumo}
+
+\begin{verbatim}
+## 
+## \begin{longtable}[t]{lllll}
+## \caption{\label{tab:resumo_integrado_2025_pdf}Top 10 subprefeituras com maior (real - alvo) — 2025}\\
+## \toprule
+## Subprefeitura & IDRGP alvo & IDRGP real & Diferença (real - alvo) & Status (IC 95\%)\\
+## \midrule
+## Sé & 1.8\% & 12.0\% & 10.2\% & Acima do IDRGP Alvo\\
+## Mooca & 1.5\% & 4.2\% & 2.7\% & Acima do IDRGP Alvo\\
+## Vila Mariana & 0.8\% & 3.4\% & 2.6\% & Acima do IDRGP Alvo\\
+## Santo Amaro & 0.8\% & 2.9\% & 2.1\% & Acima do IDRGP Alvo\\
+## Lapa & 1.2\% & 2.9\% & 1.7\% & Acima do IDRGP Alvo\\
+## \addlinespace
+## Vila Maria/Vila Guilherme & 1.5\% & 2.8\% & 1.3\% & Acima do IDRGP Alvo\\
+## Jabaquara & 1.5\% & 2.7\% & 1.2\% & Acima do IDRGP Alvo\\
+## Pinheiros & 0.6\% & 1.7\% & 1.1\% & Acima do IDRGP Alvo\\
+## Santana/Tucuruvi & 1.4\% & 2.4\% & 1.0\% & Acima do IDRGP Alvo\\
+## Butantã & 3.1\% & 3.7\% & 0.6\% & Dentro do IDRGP Alvo\\
+## \bottomrule
+## \end{longtable}
+## 
+## \newpage
+## 
+## \begin{longtable}[t]{lllll}
+## \caption{\label{tab:resumo_integrado_2025_pdf}Top 10 subprefeituras com menor (real - alvo) — 2025}\\
+## \toprule
+## Subprefeitura & IDRGP alvo & IDRGP real & Diferença (real - alvo) & Status (IC 95\%)\\
+## \midrule
+## Capela do Socorro & 8.2\% & 5.6\% & -2.6\% & Abaixo do IDRGP Alvo\\
+## Campo Limpo & 7.0\% & 4.5\% & -2.6\% & Abaixo do IDRGP Alvo\\
+## Cidade Ademar & 5.4\% & 3.0\% & -2.5\% & Abaixo do IDRGP Alvo\\
+## M'Boi Mirim & 7.7\% & 5.3\% & -2.4\% & Abaixo do IDRGP Alvo\\
+## São Mateus & 5.8\% & 3.4\% & -2.4\% & Abaixo do IDRGP Alvo\\
+## \addlinespace
+## Parelheiros & 4.2\% & 2.3\% & -1.9\% & Abaixo do IDRGP Alvo\\
+## Jaçanã/Tremembé & 3.6\% & 1.9\% & -1.7\% & Abaixo do IDRGP Alvo\\
+## São Miguel Paulista & 4.0\% & 2.4\% & -1.6\% & Abaixo do IDRGP Alvo\\
+## Itaquera & 5.0\% & 3.6\% & -1.4\% & Abaixo do IDRGP Alvo\\
+## Guaianases & 3.1\% & 1.8\% & -1.4\% & Abaixo do IDRGP Alvo\\
+## \bottomrule
+## \end{longtable}
+\end{verbatim}
+
+\subsection{Balanço do ciclo 2022--2025
+(resumo)}\label{balanuxe7o-do-ciclo-20222025-resumo}
+
+\begin{verbatim}
+## 
+## \begin{longtable}[t]{lllll}
+## \caption{\label{tab:resumo_ciclo_pdf}Top 10 subprefeituras com maior (real - alvo) — ciclo 2022–2025}\\
+## \toprule
+## Subprefeitura & IDRGP alvo & IDRGP real (ciclo) & Diferença (real - alvo) & Status (±30\%)\\
+## \midrule
+## Sé & 1.8\% & 16.7\% & 14.9\% & Acima do IDRGP Alvo\\
+## Mooca & 1.5\% & 3.9\% & 2.4\% & Acima do IDRGP Alvo\\
+## Vila Mariana & 0.8\% & 3.0\% & 2.2\% & Acima do IDRGP Alvo\\
+## Santana/Tucuruvi & 1.4\% & 3.2\% & 1.7\% & Acima do IDRGP Alvo\\
+## Lapa & 1.2\% & 2.9\% & 1.7\% & Acima do IDRGP Alvo\\
+## \addlinespace
+## Santo Amaro & 0.8\% & 2.3\% & 1.5\% & Acima do IDRGP Alvo\\
+## Jabaquara & 1.5\% & 2.8\% & 1.3\% & Acima do IDRGP Alvo\\
+## Vila Maria/Vila Guilherme & 1.5\% & 2.7\% & 1.2\% & Acima do IDRGP Alvo\\
+## Pinheiros & 0.6\% & 1.6\% & 1.0\% & Acima do IDRGP Alvo\\
+## Aricanduva/Formosa/Carrão & 1.3\% & 1.7\% & 0.4\% & Acima do IDRGP Alvo\\
+## \bottomrule
+## \end{longtable}
+## 
+## \newpage
+## 
+## \begin{longtable}[t]{lllll}
+## \caption{\label{tab:resumo_ciclo_pdf}Top 10 subprefeituras com menor (real - alvo) — ciclo 2022–2025}\\
+## \toprule
+## Subprefeitura & IDRGP alvo & IDRGP real (ciclo) & Diferença (real - alvo) & Status (±30\%)\\
+## \midrule
+## M'Boi Mirim & 7.7\% & 4.2\% & -3.5\% & Abaixo do IDRGP Alvo\\
+## Capela do Socorro & 8.2\% & 5.2\% & -3.0\% & Abaixo do IDRGP Alvo\\
+## Cidade Ademar & 5.4\% & 2.8\% & -2.6\% & Abaixo do IDRGP Alvo\\
+## São Mateus & 5.8\% & 3.3\% & -2.4\% & Abaixo do IDRGP Alvo\\
+## Campo Limpo & 7.0\% & 4.9\% & -2.2\% & Abaixo do IDRGP Alvo\\
+## \addlinespace
+## Parelheiros & 4.2\% & 2.0\% & -2.2\% & Abaixo do IDRGP Alvo\\
+## São Miguel Paulista & 4.0\% & 2.1\% & -1.9\% & Abaixo do IDRGP Alvo\\
+## Jaçanã/Tremembé & 3.6\% & 2.1\% & -1.5\% & Abaixo do IDRGP Alvo\\
+## Itaquera & 5.0\% & 3.6\% & -1.4\% & Dentro do IDRGP Alvo\\
+## Freguesia/Brasilândia & 4.5\% & 3.2\% & -1.3\% & Dentro do IDRGP Alvo\\
+## \bottomrule
+## \end{longtable}
+\end{verbatim}
+
+\section{Como gerar este PDF (passo a
+passo)}\label{como-gerar-este-pdf-passo-a-passo}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi})}
+\tightlist
+\item
+  Abra o projeto no \textbf{RStudio}.
+\item
+  Rode/``Knit'' o arquivo \texttt{IDRGP\_2025.Rmd} (isso cria os
+  resultados em \texttt{resultados/}).
+\item
+  Instale o suporte a PDF (se necessário):
+\end{enumerate}
+
+\begin{Shaded}
+\begin{Highlighting}[]
+\CommentTok{\# Rode uma vez, se você ainda não tiver LaTeX instalado:}
+\CommentTok{\# install.packages("tinytex")}
+\CommentTok{\# tinytex::install\_tinytex()}
+\end{Highlighting}
+\end{Shaded}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi})}
+\setcounter{enumi}{3}
+\tightlist
+\item
+  Agora clique em \textbf{Knit} neste arquivo:
+  \texttt{RELATORIO\_IDRGP\_PDF.Rmd}.
+\end{enumerate}
+
+\section{Apêndice --- Código completo
+(opcional)}\label{apuxeandice-cuxf3digo-completo-opcional}
+
+Este apêndice é útil para auditoria/transparência, mas tende a deixar o
+PDF pesado. Para ativar, altere \texttt{params\$incluir\_codigo:\ true}
+no YAML.
+
+\end{document}
