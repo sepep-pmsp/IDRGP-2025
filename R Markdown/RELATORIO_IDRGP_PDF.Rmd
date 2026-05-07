@@ -117,14 +117,38 @@ for (i in seq_along(mapas)) {
   path <- file.path(pasta_saida, mapas[i])
   if (file.exists(path)) {
     cat(paste0("\n\n## ", titulos[i], "\n\n"))
-    # Inclusão direta via markdown para garantir renderização em loops asis
     cat(paste0("![", titulos[i], "](", path, ")\n\n"))
     cat("\n\\newpage\n\n")
   }
 }
 ```
 
-# 3. Análise Comparativa — Gráficos de Desempenho
+# 3. Fichas Individuais por Subprefeitura (IDRGP 2025)
+
+Abaixo apresentamos o detalhamento geográfico e orçamentário individualizado para cada uma das 32 subprefeituras do município.
+
+```{r loop_mapas_individuais, results='asis'}
+pasta_mapas_ind <- file.path(pasta_saida, "mapas_subprefeituras")
+
+if (dir.exists(pasta_mapas_ind)) {
+  arquivos_mapas <- list.files(pasta_mapas_ind, pattern = "\\.png$", full.names = TRUE)
+  # Ordena alfabeticamente pelo nome do arquivo
+  arquivos_mapas <- sort(arquivos_mapas)
+  
+  for (path in arquivos_mapas) {
+    # Extrai o nome da subprefeitura do arquivo para o título
+    # Ex: mapa_detalhado_vila_mariana.png -> Vila Mariana
+    nome_base <- basename(path)
+    # Tenta recuperar o nome amigável a partir do df_perfil se estiver disponível ou usa o nome do arquivo
+    # Aqui vamos usar o título interno do mapa, então o título da seção pode ser genérico ou extraído.
+    cat(paste0("\n\n## Detalhamento: ", str_to_title(str_replace_all(str_remove(nome_base, "mapa_detalhado_"), "_", " ")), "\n\n"))
+    cat(paste0("![Localização](", path, ")\n\n"))
+    cat("\n\\newpage\n\n")
+  }
+}
+```
+
+# 4. Análise Comparativa — Gráficos de Desempenho
 
 Os gráficos detalham a magnitude das diferenças orçamentárias e a evolução histórica do índice por região.
 
@@ -137,10 +161,10 @@ graficos <- c(
 )
 
 titulos_g <- c(
-  "3.1. Diferença Percentual (Real vs Alvo) — 2025",
-  "3.2. Diferença Percentual Consolidada (Ciclo 2022–2025)",
-  "3.3. Execução Orçamentária em Valores Absolutos (R$)",
-  "3.4. Série Histórica Evolutiva (2022–2025)"
+  "4.1. Diferença Percentual (Real vs Alvo) — 2025",
+  "4.2. Diferença Percentual Consolidada (Ciclo 2022–2025)",
+  "4.3. Execução Orçamentária em Valores Absolutos (R$)",
+  "4.4. Série Histórica Evolutiva (2022–2025)"
 )
 
 for (i in seq_along(graficos)) {
@@ -153,7 +177,7 @@ for (i in seq_along(graficos)) {
 }
 ```
 
-# 4. Qualidade da Base de Dados — Regionalização
+# 5. Qualidade da Base de Dados — Regionalização
 
 A regionalização é o processo de atribuir um gasto a um território específico. Quanto maior a regionalização, maior a precisão do IDRGP.
 
@@ -185,7 +209,7 @@ if (all(file.exists(arquivos_reg))) {
 
 \newpage
 
-# 5. Destaques por Subprefeitura (2025)
+# 6. Destaques por Subprefeitura (2025)
 
 ```{r destaques_2025, results='asis'}
 arq_int <- file.path(pasta_saida, "df_integrado_2025.xlsx")
@@ -225,7 +249,7 @@ if (file.exists(arq_int)) {
 
 \newpage
 
-# 6. Evolução Populacional Histórica (Censos IBGE)
+# 7. Evolução Populacional Histórica (Censos IBGE)
 
 Integramos a evolução demográfica para contextualizar a pressão por serviços públicos em cada região.
 
@@ -261,7 +285,7 @@ if (file.exists(arq_pop)) {
 
 \newpage
 
-# 7. Apêndice — Nota Metodológica
+# 8. Apêndice — Nota Metodológica
 
 ```{r metodologia_clean, results='asis'}
 arq_base <- "IDRGP_2025.Rmd"

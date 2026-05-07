@@ -752,15 +752,33 @@ regionálizável, variando entre 12$ e 28% a depender do ano.</li>
 <p>Para a gestão, isso significa que os dados utilizados já passaram por
 um processo rigoroso de qualificação.</p>
 </div>
-<div id="processamento-dos-4-anos" class="section level2">
-<h2>11. Processamento dos 4 anos</h2>
-<p>Aqui o sistema aplica a mesma lógica de tratamento a todos os anos do
-PPA, garantindo comparabilidade temporal.</p>
-<p>Além disso, é realizada uma verificação importante: confirma-se que
-os valores totais de cada ano são distintos, evitando duplicações ou
-erros de leitura.</p>
-<p>O resultado é um conjunto estruturado de bases anuais e agregadas,
-que sustentam toda a análise posterior.</p>
+<div id="processamento-populacional-e-dos-4-anos" class="section level2">
+<h2>11. Processamento Populacional e dos 4 anos</h2>
+<p>Este bloco consolida a base demográfica histórica e prepara as bases
+orçamentárias para o ciclo do PPA.</p>
+<pre><code>## Warning: The `file` argument of `vroom()` must use `I()` for literal data as of vroom
+## 1.5.0.
+##   
+##   # Bad:
+##   vroom(&quot;X,Y\n1.5,2.3\n&quot;)
+##   
+##   # Good:
+##   vroom(I(&quot;X,Y\n1.5,2.3\n&quot;))
+## ℹ The deprecated feature was likely used in the readr package.
+##   Please report the issue at &lt;https://github.com/tidyverse/readr/issues&gt;.
+## This warning is displayed once per session.
+## Call `lifecycle::last_lifecycle_warnings()` to see where this warning was
+## generated.</code></pre>
+<pre><code>## Warning: There were 7 warnings in `mutate()`.
+## The first warning was:
+## ℹ In argument: `across(starts_with(&quot;ano_&quot;), ~as.numeric(str_remove_all(.x,
+##   &quot;\\.&quot;)))`.
+## Caused by warning:
+## ! NAs introduzidos por coerção
+## ℹ Run `dplyr::last_dplyr_warnings()` to see the 6 remaining warnings.</code></pre>
+</div>
+<div id="funções-de-suporte-e-regionalização" class="section level2">
+<h2>12. Funções de suporte e regionalização</h2>
 <pre><code>## ✅ Ano 2022 : 254068 linhas, 32 subprefeituras, R$ 16.129.553.626 
 ## ✅ Ano 2023 : 300801 linhas, 32 subprefeituras, R$ 33.321.223.743 
 ## ✅ Ano 2024 : 354540 linhas, 32 subprefeituras, R$ 45.647.361.712 
@@ -1699,8 +1717,7 @@ gráficos e bases de dados) sejam salvos de forma estruturada.</p>
 <p>Isso permite:</p>
 <p>compartilhamento institucional; auditoria; reaproveitamento em outras
 análises.</p>
-<pre><code>## Subprefeituras em df_anexo: 32</code></pre>
-<pre><code>## Valor total: 57.170.300.140</code></pre>
+<pre><code>## ✅ Arquivo detalhado gerado com 33 abas em resultados/df_anexo_2025.xlsx</code></pre>
 </div>
 </div>
 <div id="tabelas-para-2022-2025" class="section level2">
@@ -1751,7 +1768,7 @@ pela execução do orçamento em cada território.</h2>
 <pre><code>## [1] TRUE</code></pre>
 <pre><code>## Writing layer `idrgp_2025&#39; to data source 
 ##   `resultados/idrgp_2025.gpkg&#39; using driver `GPKG&#39;
-## Writing 32 features with 12 fields and geometry type Polygon.</code></pre>
+## Writing 32 features with 13 fields and geometry type Polygon.</code></pre>
 <pre><code>## [1] TRUE</code></pre>
 <pre><code>## Writing layer `idrgp_ciclo&#39; to data source 
 ##   `resultados/idrgp_ciclo_2022_2025.gpkg&#39; using driver `GPKG&#39;
@@ -1768,72 +1785,10 @@ pela execução do orçamento em cada território.</h2>
 ## - resultados/tabelas_alocacao_subprefeituras.xlsx
 ## - resultados/tabelas_temas_municipio.xlsx</code></pre>
 </div>
-<div id="exportação-novo-mapas-de-localização-subprefeituras-distritos" class="section level2">
-<h2>20.8. Exportação (novo) — Mapas de localização (subprefeituras +
-distritos)</h2>
-<pre><code>## ✅ Mapas de localização exportados.</code></pre>
-</div>
-<div id="análise-populacional-histórica-19502022-e-síntese-por-subprefeitura" class="section level2">
-<h2>20.9. Análise Populacional Histórica (1950–2022) e Síntese por
-Subprefeitura</h2>
-<table>
-<caption>População 2010-2022 — Sé</caption>
-<thead>
-<tr class="header">
-<th align="left">nome</th>
-<th align="right">ano_2010</th>
-<th align="right">ano_2022</th>
-</tr>
-</thead>
-<tbody>
-<tr class="odd">
-<td align="left">Subprefeitura Sé</td>
-<td align="right">431106</td>
-<td align="right">423536</td>
-</tr>
-<tr class="even">
-<td align="left">Bela Vista</td>
-<td align="right">69460</td>
-<td align="right">60024</td>
-</tr>
-<tr class="odd">
-<td align="left">Bom Retiro</td>
-<td align="right">33892</td>
-<td align="right">33520</td>
-</tr>
-<tr class="even">
-<td align="left">Cambuci</td>
-<td align="right">36948</td>
-<td align="right">45163</td>
-</tr>
-<tr class="odd">
-<td align="left">Consolação</td>
-<td align="right">57365</td>
-<td align="right">53249</td>
-</tr>
-<tr class="even">
-<td align="left">Liberdade</td>
-<td align="right">69092</td>
-<td align="right">66056</td>
-</tr>
-<tr class="odd">
-<td align="left">República</td>
-<td align="right">57341</td>
-<td align="right">60720</td>
-</tr>
-<tr class="even">
-<td align="left">Santa Cecília</td>
-<td align="right">83357</td>
-<td align="right">80972</td>
-</tr>
-<tr class="odd">
-<td align="left">Sé</td>
-<td align="right">23651</td>
-<td align="right">23832</td>
-</tr>
-</tbody>
-</table>
-<pre><code>## ✅ Tabelas síntese e base histórica exportadas.</code></pre>
+<div id="mapas-individuais-por-subprefeitura-32-mapas-com-inset" class="section level2">
+<h2>20.8. Mapas Individuais por Subprefeitura (32 Mapas com Inset)</h2>
+<pre><code>## Gerando 32 mapas premium...</code></pre>
+<pre><code>## ✅ 32 Mapas premium exportados em:  resultados/mapas_subprefeituras</code></pre>
 </div>
 <div id="conclusão-automatizada" class="section level2">
 <h2>21. Conclusão automatizada</h2>
