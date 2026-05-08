@@ -1,6 +1,6 @@
 ---
 ---
-title: "IDRGP — Índice de Distribuição Regional do Gasto Público"
+title: "Índice de Distribuição Regional do Gasto Público (IDRGP)"
 subtitle: "Análise do Ciclo PPA 2022–2025"
 author: "SEPLAN/SIME/CPMA — Prefeitura de São Paulo, 2026."
 date: "`r format(Sys.Date(), '%d/%m/%Y')`"
@@ -1639,287 +1639,155 @@ cat("✅ Arquivos geoespaciais exportados.\n")
 
 ## 20.7. Exportação (novo) — Tabelas de alocação por ano e temas
 
-```{r exporta_tabelas_alocacao_temas, echo=FALSE, message=FALSE, warning=FALSE}
-# -----------------------------------------------------------------------------
-# 1) Tabelas de Alocação (Simplificadas)
-# -----------------------------------------------------------------------------
-
-# Função rápida para garantir que temos as colunas básicas
-limpar_tab <- function(df) {
-  df |> 
-    st_drop_geometry() |>
-    select(any_of(c("sigla", "subprefeitura", "populacao", "valor", "idrgp_alvo", "idrgp_real", "status_estatistico", "valor_2022_a_2025", "idrgp_real_2022_a_2025", "status_ciclo_estatistico")))
-}
-
-tab_alocacao_anos <- df_ciclo |>
-  mutate(valor_2022_a_2025 = valor_2022 + valor_2023 + valor_2024 + valor_2025) |>
-  arrange(desc(valor_2025))
-
-tab_alocacao_2025 <- df_integrado |>
-  limpar_tab() |>
-  mutate(
-    idrgp_alvo_pct = idrgp_alvo * 100,
-    idrgp_real_pct = idrgp_real * 100
-  )
-
-tab_alocacao_ciclo <- df_ciclo_sf |>
-  limpar_tab() |>
-  mutate(
-    idrgp_alvo_pct = idrgp_alvo * 100,
-    idrgp_real_pct = idrgp_real_2022_a_2025 * 100
-  )
-
-# -----------------------------------------------------------------------------
-# 2) Temas que mais receberam recursos no município (robusto a nomes de colunas)
-# -----------------------------------------------------------------------------
-
-detectar_coluna <- function(df, patterns) {
-  nm <- names(df)
-  n2 <- tolower(iconv(nm, from = "", to = "ASCII//TRANSLIT"))
-  idx <- which(purrr::map_lgl(n2, ~ any(stringr::str_detect(.x, patterns))))
-  if (length(idx) == 0) return(NA_character_)
-  nm[idx[1]]
-}
-
-coluna_valor <- function(df) {
-  nm <- names(df)
-  n2 <- tolower(iconv(nm, from = "", to = "ASCII//TRANSLIT"))
-  candidatos <- c("valor_detalhamento_acao", "valor_detalhamento_a_cao", "valor", "vlr")
-  idx <- which(purrr::map_lgl(n2, ~ any(stringr::str_detect(.x, candidatos))))
-  if (length(idx) == 0) return(NA_character_)
-  nm[idx[1]]
-}
-
-extrair_temas <- function(arquivo, ano) {
-  df <- readxl::read_xlsx(arquivo) |>
-    janitor::clean_names()
-
-  col_vlr <- coluna_valor(df)
-  col_tema <- detectar_coluna(df, c("tema"))
-  col_sub  <- detectar_coluna(df, c("subpref"))
-
-  # fallback: se não existir "tema", tenta uma classificação mais ampla (função/eixo/programa)
-  if (is.na(col_tema)) {
-    col_tema <- detectar_coluna(df, c("area", "eixo", "funcao", "subfuncao", "programa", "acao", "projeto"))
-  }
-
-  if (any(is.na(c(col_vlr, col_tema)))) {
-    warning("Não foi possível identificar coluna de tema/valor em ", basename(arquivo), ".")
-    return(tibble())
-  }
-
-  df |>
-    transmute(
-      ano = as.integer(ano),
-      tema = as.character(.data[[col_tema]]),
-      subprefeitura = if (!is.na(col_sub)) padronizar_subprefeitura(.data[[col_sub]]) else NA_character_,
-      valor = suppressWarnings(as.numeric(.data[[col_vlr]]))
-    ) |>
-    mutate(
-      tema = str_squish(replace_na(tema, "Não identificado")),
-      tema = if_else(tema == "", "Não identificado", tema),
-      valor = replace_na(valor, 0)
-    )
-}
-
-temas_long <- bind_rows(
-  extrair_temas(arquivo_2022, 2022),
-  extrair_temas(arquivo_2023, 2023),
-  extrair_temas(arquivo_2024, 2024),
-  extrair_temas(arquivo_2025, 2025)
-)
-
-temas_municipio_2025 <- temas_long |>
-  filter(ano == 2025) |>
-  group_by(tema) |>
-  summarise(valor = sum(valor, na.rm = TRUE), .groups = "drop") |>
-  arrange(desc(valor))
-
-temas_municipio_ciclo <- temas_long |>
-  group_by(tema) |>
-  summarise(valor = sum(valor, na.rm = TRUE), .groups = "drop") |>
-  arrange(desc(valor))
-
-# Pivot (tema x subprefeitura), útil para cruzar "temas" com território
-temas_subpref_2025 <- temas_long |>
-  filter(ano == 2025, !is.na(subprefeitura), subprefeitura != "") |>
-  group_by(tema, subprefeitura) |>
-  summarise(valor = sum(valor, na.rm = TRUE), .groups = "drop") |>
-  left_join(df_siglas, by = "subprefeitura") |>
-  select(tema, sigla, valor) |>
-  tidyr::pivot_wider(
-    names_from = sigla,
-    values_from = valor,
-    values_fn = sum,
-    values_fill = list(valor = 0)
-  ) |>
-  arrange(desc(rowSums(across(where(is.numeric)))))
-
-temas_subpref_ciclo <- temas_long |>
-  filter(!is.na(subprefeitura), subprefeitura != "") |>
-  group_by(tema, subprefeitura) |>
-  summarise(valor = sum(valor, na.rm = TRUE), .groups = "drop") |>
-  left_join(df_siglas, by = "subprefeitura") |>
-  select(tema, sigla, valor) |>
-  tidyr::pivot_wider(
-    names_from = sigla,
-    values_from = valor,
-    values_fn = sum,
-    values_fill = list(valor = 0)
-  ) |>
-  arrange(desc(rowSums(across(where(is.numeric)))))
-
-arq_tab_alocacao <- file.path(pasta_saida, "tabelas_alocacao_subprefeituras.xlsx")
-arq_tab_temas <- file.path(pasta_saida, "tabelas_temas_municipio.xlsx")
-
-write_xlsx(
-  list(
-    "alocacao_anos_2022_2025" = tab_alocacao_anos,
-    "alocacao_2025" = tab_alocacao_2025,
-    "alocacao_ciclo_2022_2025" = tab_alocacao_ciclo
-  ),
-  path = arq_tab_alocacao
-)
-
-write_xlsx(
-  list(
-    "temas_2025_municipio" = temas_municipio_2025,
-    "temas_ciclo_2022_2025" = temas_municipio_ciclo,
-    "temas_x_subpref_2025" = temas_subpref_2025,
-    "temas_x_subpref_ciclo" = temas_subpref_ciclo
-  ),
-  path = arq_tab_temas
-)
-
-cat("✅ Tabelas exportadas:\n",
-    "- ", arq_tab_alocacao, "\n",
-    "- ", arq_tab_temas, "\n", sep = "")
-```
-
-## 20.8. Mapas Individuais por Subprefeitura (32 Mapas com Inset)
-
 ```{r exporta_mapas_individuais, echo=FALSE, message=FALSE, warning=FALSE}
 # 1) Configurações iniciais e pasta
 pasta_mapas_individuais <- file.path(pasta_saida, "mapas_subprefeituras")
 if (!dir.exists(pasta_mapas_individuais)) dir.create(pasta_mapas_individuais)
 
-# Verifica shape de distritos
 arquivo_distritos <- file.path(pasta_dados, "distrito_municipal_v2.shp")
 
 if (!file.exists(arquivo_distritos)) {
   cat("⚠️ Arquivo de distritos não encontrado. Mapas individuais não gerados.\n")
 } else {
-  # Carrega e limpa dados espaciais
-  distritos_sf <- read_sf(arquivo_distritos) |> 
-    janitor::clean_names() |> 
-    st_make_valid() |> 
-    st_transform(4326)
+
+  # --- Carrega distritos ---
+  sf::sf_use_s2(FALSE)
   
-  # Associa distritos às subprefeituras via interseção espacial (Garante mesmo CRS)
-  distritos_sf <- st_join(
-    distritos_sf, 
-    subprefeitura_sf |> st_transform(4326) |> select(subprefeitura_geo = subprefeitura, sigla_geo = sigla), 
-    join = st_intersects, 
-    left = TRUE
-  )
-  
-  # Dados de perfil para as informações sintéticas
-  df_perfil <- df_integrado |> 
-    st_drop_geometry() |> 
+  distritos_sf <- read_sf(arquivo_distritos) |>
+    janitor::clean_names() |>
+    st_make_valid() |>
+    st_transform(4326) |>
+    st_join(
+      subprefeitura_sf |> st_transform(4326) |> select(subprefeitura_geo = subprefeitura, sigla_geo = sigla),
+      join = st_intersects,
+      left = TRUE
+    ) |>
+    dplyr::distinct(geometry, .keep_all = TRUE)
+
+  # --- Perfil e BBox ---
+  df_perfil <- df_integrado |>
+    st_drop_geometry() |>
     select(subprefeitura, sigla, populacao, valor_2025 = valor, idrgp_alvo, idrgp_real, status = status_estatistico)
 
-  # Calcula BBox fixo da cidade inteira uma única vez (Garante mesma escala)
   bbox_sp <- st_bbox(subprefeitura_sf)
-  
-  # Função para gerar o mapa de uma subprefeitura específica (Versão Premium Localization)
+
+  # --- Função principal ---
   gerar_mapa_subpref <- function(nome_sp) {
-    # Filtra dados
-    sf_subpref <- subprefeitura_sf |> filter(subprefeitura == nome_sp)
-    sf_distritos <- distritos_sf |> filter(subprefeitura_geo == nome_sp)
-    row_perfil <- df_perfil |> filter(subprefeitura == nome_sp)
-    
-    cor_sp <- cores_status[row_perfil$status]
+
+    sf_subpref   <- subprefeitura_sf |> filter(subprefeitura == nome_sp)
+    sf_distritos <- distritos_sf     |> filter(subprefeitura_geo == nome_sp)
+    row_perfil   <- df_perfil        |> filter(subprefeitura == nome_sp)
+
+    cor_sp   <- cores_status[row_perfil$status]
     sigla_sp <- row_perfil$sigla
-    
-    # Texto informativo para o rodapé (Box de legenda)
+
+    # Coluna de rótulo dos distritos (prioridade: sigla > nome)
+    col_label <- if ("sg_distrito_municipal" %in% names(sf_distritos)) {
+      "sg_distrito_municipal"
+    } else {
+      intersect(names(sf_distritos), c("sigla", "nm_distrito", "nm_distr", "distrito", "nome"))[1]
+    }
+
+    # Texto do caption (sem itálico, sem "Distritos:" no subtitle)
     info_text <- paste0(
       "Subprefeitura: ", row_perfil$subprefeitura, " (", sigla_sp, ")  |  ",
-      "População: ", format(row_perfil$populacao, big.mark=".", decimal.mark=","), " hab.  |  ",
-      "Regionalizado 2025: R$ ", format(row_perfil$valor_2025, big.mark=".", decimal.mark=","), "\n",
-      "IDRGP Alvo (Meta): ", scales::percent(row_perfil$idrgp_alvo, accuracy=0.01), "  |  ",
-      "IDRGP Real (Exec.): ", scales::percent(row_perfil$idrgp_real, accuracy=0.01), "  |  ",
-      "Status: ", row_perfil$status
+      "População: ", format(row_perfil$populacao, big.mark = ".", decimal.mark = ","), " hab.  |  ",
+      "Regionalizado 2025: R$ ", format(row_perfil$valor_2025, big.mark = ".", decimal.mark = ","), "\n",
+      "IDRGP Alvo (Meta): ", scales::percent(row_perfil$idrgp_alvo, accuracy = 0.01), "  |  ",
+      "IDRGP Real (Exec.): ", scales::percent(row_perfil$idrgp_real, accuracy = 0.01), "  |  ",
+      "Status: ", row_perfil$status,
+      "\n\nFonte: GeoSampa. Elaboração: CPMA/SIME, 2026."
     )
-    
-    # Lista de distritos
-    lista_distritos <- paste(sort(unique(sf_distritos$nm_distr)), collapse = ", ")
 
-    # --- Plot Principal ---
+    # --- Plot ---
     p <- ggplot() +
-      # 1) Fundo: Todo o município em branco/cinza muito claro
-      geom_sf(data = subprefeitura_sf, fill = "white", color = "grey80", linewidth = 0.2) +
-      # 2) Destaque: Subprefeitura atual colorida pelo status (mais transparente)
-      geom_sf(data = sf_subpref, fill = cor_sp, color = "black", linewidth = 0.6, alpha = 0.3) +
-      # 3) Detalhe: Distritos internos da subprefeitura em destaque
-      geom_sf(data = sf_distritos, fill = NA, color = "black", linewidth = 0.3, linetype = "solid") +
-      # 4) Labels de contexto: Siglas sutilmente em SP
-      geom_sf_text(data = subprefeitura_sf, aes(label = sigla), size = 2.5, color = "grey70", alpha = 0.5) +
-      # Estética e Temas
-      theme_minimal(base_size = 11) +
+
+      # 1) Fundo: município inteiro — fill contrastante para o shape aparecer
+      geom_sf(data = subprefeitura_sf,
+              fill = "#e8e8e8", color = "#555555", linewidth = 0.25) +
+
+      # 2) Borda forte do município (shape sobreposto sem fill)
+      geom_sf(data = st_union(subprefeitura_sf),
+              fill = NA, color = "#1a1a1a", linewidth = 1.1) +
+
+      # 3) Siglas de contexto das demais subprefeituras
+      geom_sf_text(data = subprefeitura_sf,
+                   aes(label = sigla),
+                   size = 1.8, color = "grey45", alpha = 0.8) +
+
+      # 4) Subprefeitura ativa — cor do status, sem vizinhos coloridos
+      geom_sf(data = sf_subpref,
+              fill = cor_sp, color = "#1a1a1a", linewidth = 1.4, alpha = 0.65) +
+
+      # 5) Perímetros internos dos distritos (somente da SP ativa)
+      geom_sf(data = sf_distritos,
+              fill = NA, color = "black", linewidth = 0.35, linetype = "solid") +
+
+      # 6) Siglas dos distritos (somente quando a SP está ativa)
+      geom_sf_text(data = sf_distritos,
+                   aes(label = .data[[col_label]]),
+                   size = 2.3, color = "black", fontface = "bold",
+                   check_overlap = TRUE) +
+
+      # Tema e títulos
       labs(
-        title = paste0("IDRGP 2025 — ", nome_sp, " (", sigla_sp, ")"),
-        subtitle = paste0("Distritos: ", str_wrap(lista_distritos, width = 90)),
-        caption = paste0(info_text, "\n\nFonte: GeoSampa. Elaboração: CPMA/SIME, 2026."),
+        title    = paste0("IDRGP 2025 — ", nome_sp, " (", sigla_sp, ")"),
+        subtitle = NULL,   # removido "Distritos:"
+        caption  = info_text,
         x = NULL, y = NULL
       ) +
+      theme_minimal(base_size = 11) +
       theme(
-        plot.title = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1a1a1a"),
-        plot.subtitle = element_text(size = 9, color = "#4d4d4d", hjust = 0.5, margin = margin(b=15)),
-        plot.caption = element_text(size = 10, color = "black", hjust = 0.5, lineheight = 1.2, 
-                                    face = "italic", margin = margin(t=20)),
-        panel.background = element_rect(fill = "#fdfdfd", color = NA),
-        plot.background = element_rect(fill = "white", color = NA),
-        panel.grid.major = element_line(color = "grey95", linewidth = 0.3),
+        plot.title      = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1a1a1a"),
+        plot.caption    = element_text(size = 9, color = "black", hjust = 0.5,
+                                       lineheight = 1.2, face = "plain",   # sem itálico
+                                       margin = margin(t = 15, b = 10)),
+        # Borda dos quadrantes (panel)
+        panel.background = element_rect(fill = "white", color = "black", linewidth = 0.6),
+        plot.background  = element_rect(fill = "#f5f5f5", color = NA),
+        panel.grid.major = element_line(color = "grey93", linewidth = 0.3),
         panel.grid.minor = element_blank(),
-        axis.text = element_text(size = 7, color = "grey60")
+        axis.text        = element_text(size = 7, color = "grey55")
       ) +
-      # Fixa a escala em SP inteira
       coord_sf(
-        xlim = c(bbox_sp$xmin, bbox_sp$xmax),
-        ylim = c(bbox_sp$ymin, bbox_sp$ymax),
+        xlim   = c(bbox_sp$xmin, bbox_sp$xmax),
+        ylim   = c(bbox_sp$ymin, bbox_sp$ymax),
         expand = TRUE
       )
 
-    # Norte e Escala (Canto Inferior Direito conforme imagem)
+    # Norte e Escala (posição e estilo conforme referência)
     if (requireNamespace("ggspatial", quietly = TRUE)) {
       p <- p +
         ggspatial::annotation_scale(
-          location = "br", width_hint = 0.2, text_cex = 0.6, 
-          style = "ticks", line_col = "black", text_col = "black"
+          location   = "br", width_hint = 0.15, text_cex = 0.6,
+          style      = "ticks", line_col = "black", text_col = "black",
+          pad_x      = unit(0.5, "in"), pad_y = unit(0.3, "in")
         ) +
         ggspatial::annotation_north_arrow(
-          location = "br", which_north = "true",
-          pad_x = unit(0.2, "in"), pad_y = unit(0.4, "in"),
-          style = ggspatial::north_arrow_minimal(text_size = 6),
-          height = unit(0.8, "cm"), width = unit(0.8, "cm")
+          location   = "br", which_north = "true",
+          pad_x      = unit(0.5, "in"), pad_y = unit(0.6, "in"),
+          style      = ggspatial::north_arrow_minimal(text_size = 0),
+          height     = unit(1.0, "cm"), width = unit(1.0, "cm")
         )
     }
-    
+
     return(p)
   }
 
-  # Loop de geração
+  # --- Loop de exportação ---
   subprefs_lista <- sort(unique(subprefeitura_sf$subprefeitura))
-  cat("Gerando 32 mapas premium...\n")
-  
+  cat("Gerando", length(subprefs_lista), "mapas...\n")
+
   for (sp in subprefs_lista) {
-    p <- gerar_mapa_subpref(sp)
+    p        <- gerar_mapa_subpref(sp)
     nome_arq <- paste0("mapa_detalhado_", norm_name(sp), ".png")
     ggsave(file.path(pasta_mapas_individuais, nome_arq), p, width = 10, height = 8, dpi = 300)
   }
-  
-  cat("✅ 32 Mapas premium exportados em: ", pasta_mapas_individuais, "\n")
+
+  sf::sf_use_s2(TRUE)
+  cat("✅ Mapas exportados em:", pasta_mapas_individuais, "\n")
 }
+```
 ```
 
 
