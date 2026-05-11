@@ -452,6 +452,17 @@ limpar_orcamento <- function(arquivo, ano, sheet = 1) {
   if (is.na(col_valor)) stop("Coluna de valor não encontrada em ", arquivo)
   df <- df |> rename(valor_detalhamento_acao = !!sym(col_valor))
 
+  # 2.1 Identificador da ação/empenho (quando existir)
+  # Algumas bases trazem um identificador como "codigo_empenho" (ou equivalente).
+  # Quando não existir, usamos `descricao_proj_ativ` como fallback determinístico.
+  col_codigo_empenho <- intersect(
+    names(df),
+    c("codigo_empenho", "cod_empenho", "cd_empenho", "empenho", "codigo", "cod")
+  )[1]
+  if (is.na(col_codigo_empenho) || length(col_codigo_empenho) == 0) {
+    col_codigo_empenho <- "descricao_proj_ativ"
+  }
+
   # 3. Padronização de subprefeituras
 
   df <- df |>
@@ -474,7 +485,8 @@ limpar_orcamento <- function(arquivo, ano, sheet = 1) {
 
   # 5. Seleciona colunas essenciais e adiciona ano
   df <- df |>
-    select(
+    transmute(
+      codigo_empenho = as.character(.data[[col_codigo_empenho]]),
       descricao_proj_ativ,
       subprefeitura,
       valor_detalhamento_acao
@@ -1637,158 +1649,465 @@ st_write(df_shp, dsn = pasta_saida,
 cat("✅ Arquivos geoespaciais exportados.\n")
 ```
 
-## 20.7. Exportação (novo) — Tabelas de alocação por ano e temas
+## 20.7. Mapas de localização (32 subprefeituras) + Tabela/Gráfico (ações regionalizadas)
 
-```{r exporta_mapas_individuais, echo=FALSE, message=FALSE, warning=FALSE}
-# 1) Configurações iniciais e pasta
+```{r mapas_localizacao_subprefeituras, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# CHUNK 1 — MAPAS DE LOCALIZAÇÃO (32 SUBPREFEITURAS)
+# Estilo visual: conforme referência (ordem de camadas mandatória).
+# Regras gerais aplicadas aqui:
+# - S2 OFF no início e ON garantido ao final via on.exit()
+# - clean_names() + st_make_valid()
+# - Transformação única para WGS84 (EPSG:4326) e reaproveito
+# - Join determinístico distrito -> subprefeitura: centroide + st_within + fallback nearest
+# - Sem duplicatas de distrito após o join
+# - BBox global fixo (município inteiro) para enquadramento idêntico
+# ============================================================================
+
+sf::sf_use_s2(FALSE)
+on.exit(sf::sf_use_s2(TRUE), add = TRUE)
+
+# 1) Estrutura de pastas e arquivos ---------------------------------------------
 pasta_mapas_individuais <- file.path(pasta_saida, "mapas_subprefeituras")
-if (!dir.exists(pasta_mapas_individuais)) dir.create(pasta_mapas_individuais)
+if (!dir.exists(pasta_mapas_individuais)) dir.create(pasta_mapas_individuais, recursive = TRUE)
 
 arquivo_distritos <- file.path(pasta_dados, "distrito_municipal_v2.shp")
-
 if (!file.exists(arquivo_distritos)) {
-  cat("⚠️ Arquivo de distritos não encontrado. Mapas individuais não gerados.\n")
-} else {
+  stop(
+    "Shapefile de distritos não encontrado: distrito_municipal_v2.shp.\n",
+    "Verifique a pasta de dados (pasta_dados = ", pasta_dados, ")."
+  )
+}
 
-  # --- Carrega distritos ---
-  sf::sf_use_s2(FALSE)
-  
-  distritos_sf <- read_sf(arquivo_distritos) |>
-    janitor::clean_names() |>
-    st_make_valid() |>
-    st_transform(4326) |>
-    st_join(
-      subprefeitura_sf |> st_transform(4326) |> select(subprefeitura_geo = subprefeitura, sigla_geo = sigla),
-      join = st_intersects,
-      left = TRUE
-    ) |>
-    dplyr::distinct(geometry, .keep_all = TRUE)
+if (!requireNamespace("ggspatial", quietly = TRUE)) {
+  stop("Pacote `ggspatial` não instalado. Ele é obrigatório para norte + escala.")
+}
 
-  # --- Perfil e BBox ---
-  df_perfil <- df_integrado |>
-    st_drop_geometry() |>
-    select(subprefeitura, sigla, populacao, valor_2025 = valor, idrgp_alvo, idrgp_real, status = status_estatistico)
+# 2) Carregamento e padronização (uma vez) --------------------------------------
+todas_subprefs <- subprefeitura_sf |>
+  janitor::clean_names() |>
+  sf::st_make_valid() |>
+  sf::st_transform(4326)
 
-  bbox_sp <- st_bbox(subprefeitura_sf)
+distritos_sf <- sf::read_sf(arquivo_distritos) |>
+  janitor::clean_names() |>
+  sf::st_make_valid() |>
+  sf::st_transform(4326)
 
-  # --- Função principal ---
-  gerar_mapa_subpref <- function(nome_sp) {
+# 2.1) Coluna de ID único do distrito (para distinct determinístico)
+col_id_distrito <- intersect(
+  names(distritos_sf),
+  c(
+    "cd_distrito",
+    "cd_distrito_municipal",
+    "cd_dist",
+    "cd_distr",
+    "cod_distrito",
+    "codigo_distrito",
+    "id_distrito",
+    "id_dist"
+  )
+)[1]
 
-    sf_subpref   <- subprefeitura_sf |> filter(subprefeitura == nome_sp)
-    sf_distritos <- distritos_sf     |> filter(subprefeitura_geo == nome_sp)
-    row_perfil   <- df_perfil        |> filter(subprefeitura == nome_sp)
+if (is.na(col_id_distrito) || length(col_id_distrito) == 0) {
+  warning(
+    "Não foi encontrada uma coluna padrão de código único de distrito. ",
+    "Criando `cd_distrito_tmp` por ordem de linha."
+  )
+  distritos_sf <- distritos_sf |>
+    dplyr::mutate(cd_distrito_tmp = dplyr::row_number())
+  col_id_distrito <- "cd_distrito_tmp"
+}
 
-    cor_sp   <- cores_status[row_perfil$status]
-    sigla_sp <- row_perfil$sigla
+# 3) Join espacial determinístico (CRÍTICO) -------------------------------------
+# Regra do centroide:
+# - centroides dos distritos com st_centroid()
+# - st_join(join = st_within) para obter a subprefeitura que contém o centroide
+# - fallback: st_nearest_feature() para casos NA
+distritos_cent <- distritos_sf |>
+  sf::st_centroid()
 
-    # Coluna de rótulo dos distritos (prioridade: sigla > nome)
-    col_label <- if ("sg_distrito_municipal" %in% names(sf_distritos)) {
-      "sg_distrito_municipal"
-    } else {
-      intersect(names(sf_distritos), c("sigla", "nm_distrito", "nm_distr", "distrito", "nome"))[1]
-    }
+cent_join <- sf::st_join(
+  distritos_cent,
+  todas_subprefs |>
+    dplyr::select(subprefeitura_geo = subprefeitura, sigla_geo = sigla),
+  join = sf::st_within,
+  left = TRUE
+)
 
-    # Texto do caption (sem itálico, sem "Distritos:" no subtitle)
-    info_text <- paste0(
-      "Subprefeitura: ", row_perfil$subprefeitura, " (", sigla_sp, ")  |  ",
-      "População: ", format(row_perfil$populacao, big.mark = ".", decimal.mark = ","), " hab.  |  ",
-      "Regionalizado 2025: R$ ", format(row_perfil$valor_2025, big.mark = ".", decimal.mark = ","), "\n",
-      "IDRGP Alvo (Meta): ", scales::percent(row_perfil$idrgp_alvo, accuracy = 0.01), "  |  ",
-      "IDRGP Real (Exec.): ", scales::percent(row_perfil$idrgp_real, accuracy = 0.01), "  |  ",
-      "Status: ", row_perfil$status,
-      "\n\nFonte: GeoSampa. Elaboração: CPMA/SIME, 2026."
+# Garantia extra: se houver múltiplos matches, escolhe sempre o 1º de forma estável
+cent_join <- cent_join |>
+  dplyr::arrange(.data[[col_id_distrito]], dplyr::desc(!is.na(subprefeitura_geo)), subprefeitura_geo) |>
+  dplyr::group_by(.data[[col_id_distrito]]) |>
+  dplyr::slice_head(n = 1) |>
+  dplyr::ungroup()
+
+idx_na <- which(is.na(cent_join$subprefeitura_geo))
+if (length(idx_na) > 0) {
+  idx_near <- sf::st_nearest_feature(cent_join[idx_na, ], todas_subprefs)
+  cent_join$subprefeitura_geo[idx_na] <- todas_subprefs$subprefeitura[idx_near]
+  cent_join$sigla_geo[idx_na] <- todas_subprefs$sigla[idx_near]
+}
+
+lookup_sp <- cent_join |>
+  sf::st_drop_geometry() |>
+  dplyr::transmute(
+    id_distrito = .data[[col_id_distrito]],
+    subprefeitura_geo,
+    sigla_geo
+  ) |>
+  dplyr::distinct(id_distrito, .keep_all = TRUE)
+
+distritos_sf <- distritos_sf |>
+  dplyr::mutate(id_distrito = .data[[col_id_distrito]]) |>
+  dplyr::left_join(lookup_sp, by = "id_distrito") |>
+  dplyr::distinct(id_distrito, .keep_all = TRUE)
+
+if (nrow(distritos_sf) != nrow(dplyr::distinct(distritos_sf, id_distrito))) {
+  stop("Persistiram duplicatas de distritos após o join. Verifique a coluna de ID único.")
+}
+
+# 4) Perfil (sem geometria) + BBox global ----------------------------------------
+df_perfil <- df_integrado |>
+  sf::st_drop_geometry() |>
+  dplyr::select(
+    subprefeitura,
+    sigla,
+    populacao,
+    valor_2025 = valor,
+    idrgp_alvo,
+    idrgp_real,
+    status = status_estatistico
+  )
+
+bbox_sp <- sf::st_bbox(todas_subprefs)
+
+# 5) Paleta de cores por status ---------------------------------------------------
+if (!exists("cores_status")) {
+  cores_status <- c(
+    "Abaixo do IDRGP Alvo" = "#d97a0f",
+    "Dentro do IDRGP Alvo" = "#0ea1cf",
+    "Acima do IDRGP Alvo"  = "#1A1442"
+  )
+}
+
+# 6) Função: gerar 1 mapa por subprefeitura --------------------------------------
+gerar_mapa_subpref <- function(nome_sp) {
+  # 6.1) Filtros internos
+  subpref_ativa <- todas_subprefs |> dplyr::filter(subprefeitura == nome_sp)
+  distritos_internos <- distritos_sf |> dplyr::filter(subprefeitura_geo == nome_sp)
+  row_perfil <- df_perfil |> dplyr::filter(subprefeitura == nome_sp)
+
+  if (nrow(row_perfil) != 1) {
+    stop("Perfil não encontrado (ou duplicado) para a subprefeitura: ", nome_sp)
+  }
+
+  cor_sp <- unname(cores_status[row_perfil$status])
+  if (is.na(cor_sp)) {
+    cor_sp <- "#FF00FF"
+    warning("Status sem cor na paleta (cores_status) para: ", nome_sp, " | status = ", row_perfil$status)
+  }
+
+  sigla_sp <- row_perfil$sigla
+
+  # 6.2) Coluna de rótulo dos distritos
+  col_label <- NULL
+  if ("sg_distrito_municipal" %in% names(distritos_internos)) {
+    col_label <- "sg_distrito_municipal"
+  } else {
+    candidatos <- c("sigla", "nm_distrito", "nm_distr", "distrito", "nome")
+    achada <- intersect(names(distritos_internos), candidatos)[1]
+    if (!is.na(achada) && length(achada) > 0) col_label <- achada
+  }
+
+  if (is.null(col_label)) {
+    warning("Nenhuma coluna de rótulo de distrito encontrada para ", nome_sp, ". Mapa sairá sem rótulos de distrito.")
+  }
+
+  # 6.3) Camadas do ggplot (na ordem EXATA) -------------------------------------
+  p <- ggplot2::ggplot() +
+    # 1) Fundo do município — cinza claro e suave (≈10%, não denso)
+    ggplot2::geom_sf(data = todas_subprefs, fill = "#EAEAEA", color = "gray60", linewidth = 0.3) +
+    # 2) Borda externa do município
+    ggplot2::geom_sf(data = sf::st_union(todas_subprefs), fill = NA, color = "gray30", linewidth = 0.6) +
+    # 3) Siglas de TODAS as subprefeituras — legíveis, negrito
+    ggplot2::geom_sf_text(
+      data = todas_subprefs,
+      ggplot2::aes(label = sigla),
+      size = 2.5, color = "gray10", fontface = "bold"
+    ) +
+    # 4) Subprefeitura ativa (status) com borda nítida e contínua
+    ggplot2::geom_sf(data = subpref_ativa, fill = cor_sp, color = "gray20",
+                     linewidth = 0.7, alpha = 0.9) +
+    # 5) Limites dos distritos internos (tracejado leve)
+    ggplot2::geom_sf(
+      data = distritos_internos,
+      fill = NA, color = "gray75", linetype = "dashed", linewidth = 0.35
+    ) +
+    # 6) Rótulos dos distritos internos
+    {
+      if (!is.null(col_label)) {
+        ggplot2::geom_sf_text(
+          data = distritos_internos,
+          ggplot2::aes(label = .data[[col_label]]),
+          size = 2, color = "gray30", check_overlap = TRUE
+        )
+      }
+    } +
+    # 7) Sigla da subprefeitura ativa em destaque (maior, sobre as demais)
+    ggplot2::geom_sf_text(
+      data = subpref_ativa,
+      ggplot2::aes(label = sigla),
+      size = 4.0, color = "white", fontface = "bold"
+    ) +
+    # 8) Título: apenas nome + sigla, centralizado; sem subtítulo
+    ggplot2::labs(
+      title = paste0("Subprefeitura ", nome_sp, " (", sigla_sp, ")")
+    ) +
+    # 9) Coordenadas geográficas nos eixos (NÃO remover coord_sf)
+    ggplot2::coord_sf(
+      xlim = bbox_sp[c(1, 3)],
+      ylim = bbox_sp[c(2, 4)],
+      expand = TRUE
+    ) +
+    # 10) Escala no canto inferior direito
+    ggspatial::annotation_scale(
+      location   = "br",
+      width_hint = 0.3,
+      style      = "ticks",
+      text_cex   = 0.7
+    ) +
+    # 11) Seta norte logo acima da escala (pad_y empurra para cima)
+    ggspatial::annotation_north_arrow(
+      location    = "br",
+      which_north = "true",
+      height      = ggplot2::unit(1.2, "cm"),
+      width       = ggplot2::unit(0.9, "cm"),
+      pad_y       = ggplot2::unit(0.8, "cm"),
+      style       = ggspatial::north_arrow_minimal()
+    ) +
+    # 12) Tema: minimal preserva coordenadas; remove apenas elementos supérfluos
+    ggplot2::theme_minimal(base_size = 11) +
+    ggplot2::theme(
+      text             = ggplot2::element_text(family = "sans"),
+      plot.title       = ggplot2::element_text(hjust = 0.5, size = 14, face = "bold"),
+      panel.border     = ggplot2::element_rect(color = "black", fill = NA, linewidth = 0.8),
+      panel.grid.major = ggplot2::element_line(color = "gray85", linewidth = 0.3),
+      panel.grid.minor = ggplot2::element_blank(),
+      axis.text.x      = ggplot2::element_text(size = 8),
+      axis.text.y      = ggplot2::element_text(size = 8),
+      axis.title       = ggplot2::element_blank(),
+      legend.position  = "bottom",
+      legend.title     = ggplot2::element_text(size = 9, face = "bold"),
+      legend.text      = ggplot2::element_text(size = 8)
     )
 
-    # --- Plot ---
-    p <- ggplot() +
-
-      # 1) Fundo: município inteiro — fill contrastante para o shape aparecer
-      geom_sf(data = subprefeitura_sf,
-              fill = "#e8e8e8", color = "#555555", linewidth = 0.25) +
-
-      # 2) Borda forte do município (shape sobreposto sem fill)
-      geom_sf(data = st_union(subprefeitura_sf),
-              fill = NA, color = "#1a1a1a", linewidth = 1.1) +
-
-      # 3) Siglas de contexto das demais subprefeituras
-      geom_sf_text(data = subprefeitura_sf,
-                   aes(label = sigla),
-                   size = 1.8, color = "grey45", alpha = 0.8) +
-
-      # 4) Subprefeitura ativa — cor do status, sem vizinhos coloridos
-      geom_sf(data = sf_subpref,
-              fill = cor_sp, color = "#1a1a1a", linewidth = 1.4, alpha = 0.65) +
-
-      # 5) Perímetros internos dos distritos (somente da SP ativa)
-      geom_sf(data = sf_distritos,
-              fill = NA, color = "black", linewidth = 0.35, linetype = "solid") +
-
-      # 6) Siglas dos distritos (somente quando a SP está ativa)
-      geom_sf_text(data = sf_distritos,
-                   aes(label = .data[[col_label]]),
-                   size = 2.3, color = "black", fontface = "bold",
-                   check_overlap = TRUE) +
-
-      # Tema e títulos
-      labs(
-        title    = paste0("IDRGP 2025 — ", nome_sp, " (", sigla_sp, ")"),
-        subtitle = NULL,   # removido "Distritos:"
-        caption  = info_text,
-        x = NULL, y = NULL
-      ) +
-      theme_minimal(base_size = 11) +
-      theme(
-        plot.title      = element_text(face = "bold", size = 16, hjust = 0.5, color = "#1a1a1a"),
-        plot.caption    = element_text(size = 9, color = "black", hjust = 0.5,
-                                       lineheight = 1.2, face = "plain",   # sem itálico
-                                       margin = margin(t = 15, b = 10)),
-        # Borda dos quadrantes (panel)
-        panel.background = element_rect(fill = "white", color = "black", linewidth = 0.6),
-        plot.background  = element_rect(fill = "#f5f5f5", color = NA),
-        panel.grid.major = element_line(color = "grey93", linewidth = 0.3),
-        panel.grid.minor = element_blank(),
-        axis.text        = element_text(size = 7, color = "grey55")
-      ) +
-      coord_sf(
-        xlim   = c(bbox_sp$xmin, bbox_sp$xmax),
-        ylim   = c(bbox_sp$ymin, bbox_sp$ymax),
-        expand = TRUE
-      )
-
-    # Norte e Escala (posição e estilo conforme referência)
-    if (requireNamespace("ggspatial", quietly = TRUE)) {
-      p <- p +
-        ggspatial::annotation_scale(
-          location   = "br", width_hint = 0.15, text_cex = 0.6,
-          style      = "ticks", line_col = "black", text_col = "black",
-          pad_x      = unit(0.5, "in"), pad_y = unit(0.3, "in")
-        ) +
-        ggspatial::annotation_north_arrow(
-          location   = "br", which_north = "true",
-          pad_x      = unit(0.5, "in"), pad_y = unit(0.6, "in"),
-          style      = ggspatial::north_arrow_minimal(text_size = 0),
-          height     = unit(1.0, "cm"), width = unit(1.0, "cm")
-        )
-    }
-
-    return(p)
+  # Legenda discreta de status (se houver múltiplos status entre as 32 subprefs)
+  if (dplyr::n_distinct(df_perfil$status) > 1) {
+    p <- p +
+      ggplot2::scale_fill_manual(values = cores_status, name = "Status IDRGP", limits = names(cores_status))
   }
 
-  # --- Loop de exportação ---
-  subprefs_lista <- sort(unique(subprefeitura_sf$subprefeitura))
-  cat("Gerando", length(subprefs_lista), "mapas...\n")
-
-  for (sp in subprefs_lista) {
-    p        <- gerar_mapa_subpref(sp)
-    nome_arq <- paste0("mapa_detalhado_", norm_name(sp), ".png")
-    ggsave(file.path(pasta_mapas_individuais, nome_arq), p, width = 10, height = 8, dpi = 300)
-  }
-
-  sf::sf_use_s2(TRUE)
-  cat("✅ Mapas exportados em:", pasta_mapas_individuais, "\n")
+  p
 }
+
+# 7) Exporta os 32 mapas ----------------------------------------------------------
+subprefs_lista <- sort(unique(todas_subprefs$subprefeitura))
+cat("Gerando", length(subprefs_lista), "mapas de localização...\n")
+
+for (sp in subprefs_lista) {
+  p <- gerar_mapa_subpref(sp)
+  nome_arq <- paste0("mapa_detalhado_", janitor::make_clean_names(sp), ".png")
+  ggplot2::ggsave(
+    filename = file.path(pasta_mapas_individuais, nome_arq),
+    plot = p,
+    width = 10,
+    height = 8,
+    dpi = 300
+  )
+}
+
+cat("✅ Mapas exportados em:", pasta_mapas_individuais, "\n")
 ```
+
+```{r tabela_grafico_acoes_regionalizadas, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# CHUNK 2 - 32 GRAFICOS COMPACTOS: VALOR EXECUTADO POR DESCRICAO_FUNCAO
+# ============================================================================
+
+# 0) Verificacao dos objetos anuais
+for (.ano in 2022:2025) {
+  if (!exists(paste0("df_", .ano)))
+    stop("Objeto `df_", .ano, "` nao encontrado. Execute os chunks anteriores.")
+}
+
+# 1) Leitura direta dos arquivos Excel com a coluna "DESCRIÇÃO_FUNÇÃO"
+# Os df_ano processados nao reteram essa coluna; relemos os fontes originais.
+ler_excel_funcao <- function(arq, ano_val) {
+  df  <- readxl::read_xlsx(arq)
+  nm  <- names(df)
+  n2  <- tolower(iconv(nm, from = "", to = "ASCII//TRANSLIT"))
+
+  # Subprefeitura e valor (busca robusta)
+  col_sub <- nm[which(grepl("subpref", n2))[1]]
+  col_vlr <- nm[which(grepl("valor", n2) | grepl("vlr", n2))[1]]
+  if (is.na(col_sub) || is.na(col_vlr))
+    stop("Colunas subprefeitura/valor nao encontradas em ", basename(arq),
+         "\nColunas: ", paste(nm, collapse = ", "))
+
+  # Coluna DESCRIÇÃO_FUNÇÃO — nome EXATO
+  col_fun <- "DESCRI\u00c7\u00c3O_FUN\u00c7\u00c3O"
+  if (!col_fun %in% nm)
+    stop("Coluna '", col_fun, "' NAO encontrada em ", basename(arq),
+         "\nColunas disponíveis: ", paste(nm, collapse = ", "))
+
+  cat("Ano", ano_val, "-> coluna encontrada:", col_fun, "\n")
+
+  val_fun <- as.character(df[[col_fun]])
+  val_fun[is.na(val_fun) | nchar(trimws(val_fun)) == 0] <- "Nao classificada"
+
+  tibble::tibble(
+    subprefeitura           = as.character(df[[col_sub]]),
+    descricao_funcao        = val_fun,
+    valor_detalhamento_acao = suppressWarnings(as.numeric(df[[col_vlr]])),
+    ano                     = as.integer(ano_val)
+  )
+}
+
+df_base_fn <- dplyr::bind_rows(
+  ler_excel_funcao(arquivo_2022, 2022),
+  ler_excel_funcao(arquivo_2023, 2023),
+  ler_excel_funcao(arquivo_2024, 2024),
+  ler_excel_funcao(arquivo_2025, 2025)
+)
+
+# Diagnóstico: funções distintas nos dados brutos
+cat("\nFuncoes distintas nos dados brutos:",
+    dplyr::n_distinct(df_base_fn$descricao_funcao), "\n")
+cat(paste0("  - ", sort(unique(df_base_fn$descricao_funcao)), collapse = "\n"), "\n")
+
+
+
+# 2) Filtro: apenas as 32 subprefeituras de df_siglas
+subprefs_validas_fn <- df_siglas$subprefeitura
+n_antes_fn <- nrow(df_base_fn)
+
+df_base_fn <- df_base_fn |>
+  dplyr::filter(
+    !is.na(subprefeitura),
+    nchar(trimws(subprefeitura)) > 0,
+    !grepl("supra", subprefeitura, ignore.case = TRUE),
+    subprefeitura %in% subprefs_validas_fn
+  )
+
+cat("Linhas removidas (supra/NA/fora das 32 subprefs):", n_antes_fn - nrow(df_base_fn), "\n")
+cat("Linhas restantes:", nrow(df_base_fn), "\n")
+n_uniq_fn <- dplyr::n_distinct(df_base_fn$subprefeitura)
+cat("Subprefeituras unicas:", n_uniq_fn, "\n")
+if (n_uniq_fn != 32) warning("ATENCAO: esperavam-se 32; encontradas ", n_uniq_fn)
+
+
+# 3) Agregacao por subprefeitura e funcao + agrupamento < 5%
+df_agg_fn <- df_base_fn |>
+  dplyr::filter(!is.na(descricao_funcao), nchar(trimws(descricao_funcao)) > 0) |>
+  dplyr::group_by(subprefeitura, descricao_funcao) |>
+  dplyr::summarise(valor_executado = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") |>
+  dplyr::group_by(subprefeitura) |>
+  dplyr::mutate(
+    total_sp = sum(valor_executado),
+    pct      = valor_executado / total_sp * 100,
+    descricao_funcao = dplyr::if_else(pct < 5, "Outras funcoes", descricao_funcao)
+  ) |>
+  dplyr::ungroup() |>
+  dplyr::group_by(subprefeitura, descricao_funcao) |>
+  dplyr::summarise(valor_executado = sum(valor_executado), .groups = "drop")
+
+# 4) Diagnostico
+funcoes_top5_fn <- df_agg_fn |>
+  dplyr::filter(descricao_funcao != "Outras funcoes") |>
+  dplyr::group_by(descricao_funcao) |>
+  dplyr::summarise(total = sum(valor_executado), .groups = "drop") |>
+  dplyr::arrange(dplyr::desc(total)) |>
+  dplyr::slice_head(n = 5) |>
+  dplyr::pull(descricao_funcao)
+cat("\nFuncoes distintas:", dplyr::n_distinct(df_agg_fn$descricao_funcao), "\n")
+for (j in seq_along(funcoes_top5_fn)) cat(" ", j, ".", funcoes_top5_fn[j], "\n")
+
+# 5) Paleta IDRGP
+cores_idrgp_fn <- c("#d97a0f","#0ea1cf","#1A1442","#6B2D5C","#D4A017",
+                    "#2E86AB","#A23B72","#F18F01","#C73E1D","#3B1F2B")
+fns_prin <- sort(setdiff(unique(df_agg_fn$descricao_funcao), "Outras funcoes"))
+pal_fn   <- setNames(c(rep_len(cores_idrgp_fn, length(fns_prin)), "gray70"),
+                     c(fns_prin, "Outras funcoes"))
+
+# 6) Pasta de saida
+pasta_gf <- file.path(pasta_saida, "graficos_funcao_subprefeitura")
+if (!dir.exists(pasta_gf)) dir.create(pasta_gf, recursive = TRUE)
+
+# 7) Loop: 1 grafico por subprefeitura
+lista_sps_fn <- sort(unique(df_siglas$subprefeitura))
+cat("\nGerando", length(lista_sps_fn), "graficos compactos...\n")
+
+for (i in seq_along(lista_sps_fn)) {
+  sp_nm <- lista_sps_fn[i]
+  sp_sg <- df_siglas$sigla[df_siglas$subprefeitura == sp_nm][1]
+  if (is.na(sp_sg)) sp_sg <- ""
+  cat("Gerando grafico", i, "/", length(lista_sps_fn), ":", sp_nm, "(", sp_sg, ")\n")
+
+  df_sp_fn <- df_agg_fn |> dplyr::filter(subprefeitura == sp_nm)
+  if (nrow(df_sp_fn) == 0) { warning("Sem dados para: ", sp_nm); next }
+
+  niveis_fn <- c(
+    df_sp_fn |> dplyr::filter(descricao_funcao != "Outras funcoes") |>
+      dplyr::arrange(valor_executado) |> dplyr::pull(descricao_funcao),
+    if ("Outras funcoes" %in% df_sp_fn$descricao_funcao) "Outras funcoes"
+  )
+  df_sp_fn <- df_sp_fn |>
+    dplyr::mutate(descricao_funcao = factor(descricao_funcao, levels = niveis_fn))
+
+  g_fn <- ggplot2::ggplot(
+    df_sp_fn,
+    ggplot2::aes(x = valor_executado, y = descricao_funcao, fill = descricao_funcao)
+  ) +
+    ggplot2::geom_col(width = 0.7, show.legend = FALSE) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = paste0("R$ ", round(valor_executado / 1e6, 1), "M")),
+      hjust = -0.1, size = 1.8, color = "gray20"
+    ) +
+    ggplot2::scale_fill_manual(values = pal_fn, na.value = "gray70") +
+    ggplot2::scale_x_continuous(
+      labels = scales::label_number(scale_cut = scales::cut_short_scale(),
+                                    prefix = "R$ ", decimal.mark = ","),
+      expand = ggplot2::expansion(mult = c(0, 0.30))
+    ) +
+    ggplot2::labs(
+      title = paste0("Subprefeitura ", sp_nm, " (", sp_sg, ")"),
+      x = "Valor executado (R$)", y = NULL
+    ) +
+    ggplot2::theme_minimal(base_size = 6) +
+    ggplot2::theme(
+      text               = ggplot2::element_text(family = "sans"),
+      plot.title         = ggplot2::element_text(face = "bold", size = 8, hjust = 0),
+      axis.text.y        = ggplot2::element_text(size = 5),
+      axis.text.x        = ggplot2::element_text(size = 5),
+      axis.title.x       = ggplot2::element_text(size = 6),
+      axis.title.y       = ggplot2::element_blank(),
+      legend.position    = "none",
+      plot.margin        = ggplot2::margin(2, 2, 2, 2),
+      panel.grid.major.y = ggplot2::element_blank(),
+      panel.grid.minor   = ggplot2::element_blank()
+    )
+
+  arq_fn <- paste0("grafico_funcao_", janitor::make_clean_names(sp_nm), ".png")
+  ggplot2::ggsave(file.path(pasta_gf, arq_fn), g_fn,
+                  width = 16, height = 5, units = "cm", dpi = 300)
+}
+
+cat("\n\u2705", length(lista_sps_fn), "graficos exportados em:", pasta_gf, "\n")
 ```
+
+
+
 
 
 
