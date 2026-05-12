@@ -37,11 +37,12 @@ library(readxl)      # leitura de arquivos Excel
 library(janitor)     # padronização de nomes de colunas
 library(scales)      # formatação de eixos em gráficos
 library(writexl)     # exportação para Excel
-library(sf)          # dados geoespaciais vetorias
+library(sf)          # dados geoespaciais vetoriais
 library(geobr)       # dados geoespaciais e mapas - BRASIL
 library(ggplot2)     # gráficos
 library(knitr)       # exibir tabelas
 library(dplyr)
+library(stringi)     # remoção e padronização de acentos
 
 ```
 
@@ -56,12 +57,7 @@ norm_name <- function(x) {
   x |>
     str_to_lower() |>
     str_squish() |>
-    str_replace_all("[áàâãä]", "a") |>
-    str_replace_all("[éèêë]",  "e") |>
-    str_replace_all("[íìîï]",  "i") |>
-    str_replace_all("[óòôõö]", "o") |>
-    str_replace_all("[úùûü]",  "u") |>
-    str_replace_all("ç",       "c") |>
+    iconv(from = "", to = "ASCII//TRANSLIT") |>
     str_replace_all("^subprefeitura de ", "") |>
     str_replace_all("^subprefeitura ",    "") |>
     str_replace_all("[^a-z0-9]",          "")
@@ -1930,49 +1926,136 @@ for (sp in subprefs_lista) {
 cat("✅ Mapas exportados em:", pasta_mapas_individuais, "\n")
 ```
 
-```{r tabela_grafico_acoes_regionalizadas, echo=FALSE, message=FALSE, warning=FALSE}
-# ============================================================================
-# CHUNK 2 - 32 GRAFICOS COMPACTOS: VALOR EXECUTADO POR DESCRICAO_FUNCAO
-# ============================================================================
 
-# 0) Verificacao dos objetos anuais
-for (.ano in 2022:2025) {
-  if (!exists(paste0("df_", .ano)))
-    stop("Objeto `df_", .ano, "` nao encontrado. Execute os chunks anteriores.")
+### 20.8 - Exportação das informações por funções de gastos
+
+```{r tabela_grafico_acoes_regionalizadas, echo=FALSE, message=FALSE, warning=FALSE}
+# 1) Verificação dos arquivos de origem
+arquivos_fn <- c(arquivo_2022, arquivo_2023, arquivo_2024, arquivo_2025)
+arquivos_faltando <- arquivos_fn[is.na(arquivos_fn) | !file.exists(arquivos_fn)]
+if (length(arquivos_faltando) > 0) {
+  stop("Um ou mais arquivos de origem para funções não foram encontrados:\n",
+       paste(basename(arquivos_faltando), collapse = "\n"))
 }
 
-# 1) Leitura direta dos arquivos Excel com a coluna "DESCRIÇÃO_FUNÇÃO"
-# Os df_ano processados nao reteram essa coluna; relemos os fontes originais.
-ler_excel_funcao <- function(arq, ano_val) {
-  df  <- readxl::read_xlsx(arq)
-  nm  <- names(df)
-  n2  <- tolower(iconv(nm, from = "", to = "ASCII//TRANSLIT"))
+limpar_nomes_colunas <- function(x) {
+  x <- as.character(x)
+  x <- iconv(x, from = "", to = "ASCII//TRANSLIT")
+  x <- stringr::str_replace_all(x, "[[:cntrl:]]+", " ")
+  x <- stringr::str_replace_all(x, "[[:space:]]+", " ")
+  x <- stringr::str_to_lower(x)
+  x <- trimws(x)
+  x
+}
 
-  # Subprefeitura e valor (busca robusta)
-  col_sub <- nm[which(grepl("subpref", n2))[1]]
-  col_vlr <- nm[which(grepl("valor", n2) | grepl("vlr", n2))[1]]
-  if (is.na(col_sub) || is.na(col_vlr))
-    stop("Colunas subprefeitura/valor nao encontradas em ", basename(arq),
-         "\nColunas: ", paste(nm, collapse = ", "))
+identificar_coluna <- function(nm, nm_norm, padrao) {
+  idx <- grep(padrao, nm_norm)
+  if (length(idx) == 0) return(NA_character_)
+  nm[idx[1]]
+}
 
-  # Coluna DESCRIÇÃO_FUNÇÃO — nome EXATO
-  col_fun <- "DESCRI\u00c7\u00c3O_FUN\u00c7\u00c3O"
-  if (!col_fun %in% nm)
-    stop("Coluna '", col_fun, "' NAO encontrada em ", basename(arq),
-         "\nColunas disponíveis: ", paste(nm, collapse = ", "))
+ler_excel_funcao <- function(arq, ano_val, sheet = NULL) {
+  cat("=== Diagnóstico do Excel ===\n")
+  cat("Arquivo:", arq, "\n")
 
-  cat("Ano", ano_val, "-> coluna encontrada:", col_fun, "\n")
+  sheets <- readxl::excel_sheets(arq)
+  cat("Planilhas disponíveis:", paste(sheets, collapse = " | "), "\n")
+
+  if (is.null(sheet)) {
+    sheet <- sheets[1]
+    cat("Usando sheet padrão:", sheet, "\n")
+  } else {
+    if (!sheet %in% sheets) {
+      stop("Sheet especificado não encontrado em ", basename(arq), ": ", sheet)
+    }
+    cat("Usando sheet definido:", sheet, "\n")
+  }
+
+  df <- readxl::read_xlsx(arq, sheet = sheet)
+  nm <- names(df)
+  nm_norm <- limpar_nomes_colunas(nm)
+
+  cat("Nomes originais das colunas:\n")
+  print(nm)
+  cat("Nomes normalizados das colunas:\n")
+  print(nm_norm)
+
+  col_sub <- identificar_coluna(nm, nm_norm, "subpref")
+  col_vlr <- identificar_coluna(nm, nm_norm, "valor|vlr")
+  col_fun <- identificar_coluna(nm, nm_norm, "funcao|descricao|descr")
+  col_sig <- identificar_coluna(nm, nm_norm, "sigla.*org|org.*sigla|sigla|orgao|org")
+
+  cat("Coluna subprefeitura detectada:", col_sub, "\n")
+  cat("Coluna valor detectada:", col_vlr, "\n")
+  cat("Coluna função detectada:", col_fun, "\n")
+  cat("Coluna sigla_orgao detectada:", col_sig, "\n")
+  cat("Linhas lidas:", nrow(df), "\n")
+
+  if (is.na(col_sub) || is.na(col_vlr) || is.na(col_fun)) {
+    stop("Não foi possível identificar as colunas de subprefeitura/valor/função em ", basename(arq),
+         "\nColunas originais: ", paste(nm, collapse = ", "),
+         "\nColunas normalizadas: ", paste(nm_norm, collapse = ", "))
+  }
+
+  cat("Valores iniciais da coluna de subprefeitura:\n")
+  print(head(df[[col_sub]], 20))
+  cat("Contagem de NA/blank em subprefeitura:", sum(is.na(df[[col_sub]]) | trimws(as.character(df[[col_sub]])) == ""), "\n")
+
+  if (sum(!is.na(df[[col_sub]]) & trimws(as.character(df[[col_sub]])) != "") == 0) {
+    cat("A coluna de subprefeitura detectada está vazia em todas as linhas. Tentando fallback com primeira linha como header...\n")
+    df_alt <- readxl::read_xlsx(arq, sheet = sheet, col_names = FALSE)
+    df_alt <- janitor::row_to_names(df_alt, row_number = 1)
+    nm <- names(df_alt)
+    nm_norm <- limpar_nomes_colunas(nm)
+
+    col_sub <- identificar_coluna(nm, nm_norm, "subpref")
+    col_vlr <- identificar_coluna(nm, nm_norm, "valor|vlr")
+    col_fun <- identificar_coluna(nm, nm_norm, "funcao|descricao|descr")
+    col_sig <- identificar_coluna(nm, nm_norm, "sigla.*org|org.*sigla|sigla|orgao|org")
+
+    cat("Fallback coluna subprefeitura detectada:", col_sub, "\n")
+    cat("Fallback coluna valor detectada:", col_vlr, "\n")
+    cat("Fallback coluna função detectada:", col_fun, "\n")
+    cat("Fallback coluna sigla_orgao detectada:", col_sig, "\n")
+
+    if (is.na(col_sub) || is.na(col_vlr) || is.na(col_fun)) {
+      stop("Fallback também não identificou as colunas de subprefeitura/valor/função em ", basename(arq),
+           "\nColunas originais fallback: ", paste(nm, collapse = ", "),
+           "\nColunas normalizadas fallback: ", paste(nm_norm, collapse = ", "))
+    }
+
+    cat("Valores iniciais da coluna de subprefeitura após fallback:\n")
+    print(head(df_alt[[col_sub]], 20))
+    cat("Contagem de NA/blank em subprefeitura após fallback:", sum(is.na(df_alt[[col_sub]]) | trimws(as.character(df_alt[[col_sub]])) == ""), "\n")
+
+    df <- df_alt
+  }
 
   val_fun <- as.character(df[[col_fun]])
   val_fun[is.na(val_fun) | nchar(trimws(val_fun)) == 0] <- "Nao classificada"
 
+  sigla_orgao <- if (!is.na(col_sig)) {
+    sig <- as.character(df[[col_sig]])
+    sig[is.na(sig)] <- ""
+    sig <- stringr::str_squish(sig)
+    sig <- toupper(sig)
+    sig <- gsub("[^A-Z0-9]", "", sig)
+    sig <- ifelse(sig == "", NA_character_, sig)
+    sig
+  } else {
+    rep(NA_character_, nrow(df))
+  }
+
   tibble::tibble(
-    subprefeitura           = as.character(df[[col_sub]]),
-    descricao_funcao        = val_fun,
+    subprefeitura_orig      = as.character(df[[col_sub]]),
+    descricao_funcao        = stringr::str_squish(val_fun),
+    sigla_orgao             = sigla_orgao,
     valor_detalhamento_acao = suppressWarnings(as.numeric(df[[col_vlr]])),
     ano                     = as.integer(ano_val)
   )
 }
+
+# 2) Leitura e concatenação de todos os anos
 
 df_base_fn <- dplyr::bind_rows(
   ler_excel_funcao(arquivo_2022, 2022),
@@ -1981,134 +2064,316 @@ df_base_fn <- dplyr::bind_rows(
   ler_excel_funcao(arquivo_2025, 2025)
 )
 
-# Diagnóstico: funções distintas nos dados brutos
-cat("\nFuncoes distintas nos dados brutos:",
-    dplyr::n_distinct(df_base_fn$descricao_funcao), "\n")
-cat(paste0("  - ", sort(unique(df_base_fn$descricao_funcao)), collapse = "\n"), "\n")
+# 3) Normalização robusta de nomes de subprefeitura
+enh_normaliza_subpref <- function(x) {
+  x <- as.character(x)
+  x <- iconv(x, from = "", to = "ASCII//TRANSLIT")
+  x <- stringr::str_to_lower(x)
+  
+  # Remover prefixos típicos do Excel
+  x <- stringr::str_replace_all(x, "^subprefeitura\\s+de\\s+", "")
+  x <- stringr::str_replace_all(x, "^subprefeitura\\s+", "")
+  x <- stringr::str_replace_all(x, "^supra\\s+subprefeitura\\s+", "")
+  x <- stringr::str_replace_all(x, "^supra\\s+", "")
+  
+  # Remover pontuação e caracteres de controle
+  x <- stringr::str_replace_all(x, "[[:punct:][:cntrl:]]+", " ")
+  x <- stringr::str_replace_all(x, "[[:space:]]+", " ")
+  x <- trimws(x)
+  x
+}
 
+df_siglas_fn <- df_siglas |>
+  dplyr::mutate(subprefeitura_key = enh_normaliza_subpref(subprefeitura))
 
-
-# 2) Filtro: apenas as 32 subprefeituras de df_siglas
-subprefs_validas_fn <- df_siglas$subprefeitura
-n_antes_fn <- nrow(df_base_fn)
+# 4) Construção das chaves de correspondência e depuração
 
 df_base_fn <- df_base_fn |>
-  dplyr::filter(
-    !is.na(subprefeitura),
-    nchar(trimws(subprefeitura)) > 0,
-    !grepl("supra", subprefeitura, ignore.case = TRUE),
-    subprefeitura %in% subprefs_validas_fn
+  dplyr::mutate(subprefeitura_key = enh_normaliza_subpref(subprefeitura_orig)) |>
+  # Filtrar fora agregações administrativas (supra)
+  dplyr::filter(!is.na(subprefeitura_key), subprefeitura_key != "", !grepl("^supra", subprefeitura_key))
+
+cat("Linhas lidas após normalização de subprefeitura:", nrow(df_base_fn), "\n")
+cat("Chaves únicas detectadas:\n")
+print(sort(unique(df_base_fn$subprefeitura_key)))
+
+# manter left_join para depuração
+
+df_base_fn <- df_base_fn |>
+  dplyr::left_join(
+    df_siglas_fn |> dplyr::select(subprefeitura_key, subprefeitura),
+    by = "subprefeitura_key"
   )
 
-cat("Linhas removidas (supra/NA/fora das 32 subprefs):", n_antes_fn - nrow(df_base_fn), "\n")
-cat("Linhas restantes:", nrow(df_base_fn), "\n")
-n_uniq_fn <- dplyr::n_distinct(df_base_fn$subprefeitura)
-cat("Subprefeituras unicas:", n_uniq_fn, "\n")
-if (n_uniq_fn != 32) warning("ATENCAO: esperavam-se 32; encontradas ", n_uniq_fn)
+linhas_sem_match <- df_base_fn |>
+  dplyr::filter(is.na(subprefeitura))
 
+cat("Linhas sem correspondência de subprefeitura:", nrow(linhas_sem_match), "\n")
+if (nrow(linhas_sem_match) > 0) {
+  cat("Chaves que não encontram correspondência:\n")
+  print(sort(unique(linhas_sem_match$subprefeitura_key)))
+  cat("setdiff entre chaves lidas e chaves válidas:\n")
+  print(setdiff(unique(df_base_fn$subprefeitura_key), unique(df_siglas_fn$subprefeitura_key)))
+}
 
-# 3) Agregacao por subprefeitura e funcao + agrupamento < 5%
+# 5) Se não houver correspondência, tentar fuzzy matching
+
+if (nrow(linhas_sem_match) == nrow(df_base_fn)) {
+  cat("\n⚠️  DIAGNÓSTICO DETALHADO: Nenhuma correspondência exata encontrada.\n\n")
+
+  cat("Valores BRUTOS do Excel (subprefeitura_orig):\n")
+  print(sort(unique(df_base_fn$subprefeitura_orig)))
+
+  cat("\nValores NORMALIZADOS do Excel (subprefeitura_key):\n")
+  print(sort(unique(df_base_fn$subprefeitura_key)))
+
+  cat("\nValores do df_siglas NORMALIZADOS (subprefeitura_key):\n")
+  print(sort(unique(df_siglas_fn$subprefeitura_key)))
+
+  cat("\nTentando correspondência FUZZY (aproximada) usando agrep...\n")
+
+  # Criar um mapa fuzzy de correspondências usando agrep (R base)
+  chaves_lidas <- sort(unique(df_base_fn$subprefeitura_key))
+  chaves_validas <- sort(unique(df_siglas_fn$subprefeitura_key))
+
+  mapa_fuzzy <- data.frame(chave_lida = chaves_lidas, chave_valida = NA_character_)
+
+  for (i in seq_along(chaves_lidas)) {
+    cl <- chaves_lidas[i]
+    # agrep com max.distance = 2 caracteres (ou 10% da string, o que for maior)
+    matches <- agrep(cl, chaves_validas, max.distance = list(insertions = 2, deletions = 2, substitutions = 1), ignore.case = TRUE)
+
+    if (length(matches) > 0) {
+      # Encontrar o match mais similar (o primeiro retornado por agrep é geralmente o melhor)
+      mapa_fuzzy$chave_valida[i] <- chaves_validas[matches[1]]
+      cat("Fuzzy match:", cl, "→", chaves_validas[matches[1]], "\n")
+    } else {
+      cat("Sem fuzzy match para:", cl, "\n")
+    }
+  }
+
+  # Tentar aplicar o mapa fuzzy
+  df_base_fn <- df_base_fn |>
+    dplyr::left_join(
+      mapa_fuzzy |> dplyr::rename(subprefeitura_key = chave_lida, subprefeitura_key_fuzzy = chave_valida),
+      by = "subprefeitura_key"
+    )
+
+  # Tentar join com a chave fuzzy
+  df_base_fn <- df_base_fn |>
+    dplyr::left_join(
+      df_siglas_fn |> dplyr::select(subprefeitura_key, subprefeitura) |> dplyr::rename(subprefeitura_key_fuzzy = subprefeitura_key),
+      by = "subprefeitura_key_fuzzy"
+    )
+
+  # Se fuzzy funcionou, substituir subprefeitura_key por subprefeitura_key_fuzzy
+  df_base_fn <- df_base_fn |>
+    dplyr::mutate(
+      subprefeitura_key = dplyr::coalesce(subprefeitura_key_fuzzy, subprefeitura_key)
+    ) |>
+    dplyr::select(-subprefeitura_key_fuzzy)
+
+  linhas_sem_match <- df_base_fn |>
+    dplyr::filter(is.na(subprefeitura))
+
+  cat("\nApós fuzzy matching, linhas sem correspondência:", nrow(linhas_sem_match), "\n")
+}
+
+# 6) Filtrar apenas correspondências válidas antes de gerar o gráfico
+
+df_base_fn <- df_base_fn |>
+  dplyr::filter(!is.na(subprefeitura))
+
+if (nrow(df_base_fn) == 0) {
+  stop("O dataframe final ficou vazio após a correspondência de subprefeituras. Verifique as chaves de subprefeitura e as mensagens de diagnóstico acima.")
+}
+
+cat("Linhas restantes após correspondência:", nrow(df_base_fn), "\n")
+cat("Subprefeituras únicas após correspondência:", dplyr::n_distinct(df_base_fn$subprefeitura), "\n")
+
+sigla_descricao_funcao <- function(x) {
+  x <- stringr::str_squish(as.character(x))
+  vapply(x, function(item) {
+    if (item == "") return("")
+    words <- unlist(stringr::str_split(item, "\\s+"))
+    stopwords <- c("de","da","do","das","dos","e","em","na","no","nas","nos",
+                   "para","com","por","ao","aos","se","o","a","os","as")
+    words <- words[!tolower(words) %in% stopwords]
+    if (length(words) == 0) words <- unlist(stringr::str_split(item, "\\s+"))
+    sigla <- paste0(toupper(stringr::str_sub(words, 1, 1)), collapse = "")
+    sigla <- gsub("[^A-Z0-9]", "", sigla)
+    if (nchar(sigla) < 3) {
+      sigla <- toupper(gsub("[^A-Z0-9]", "", stringr::str_sub(item, 1, 3)))
+    }
+    if (nchar(sigla) > 6) sigla <- stringr::str_sub(sigla, 1, 6)
+    sigla
+  }, FUN.VALUE = character(1), USE.NAMES = FALSE)
+}
+
+# 7) Agregação quadriênal por subprefeitura + função
+funcoes_desejadas <- c(
+  "Legislativa",
+  "Judiciária",
+  "Essencial à Justiça",
+  "Administração",
+  "Defesa Nacional",
+  "Segurança Pública",
+  "Relações Exteriores",
+  "Assistência Social",
+  "Previdência Social",
+  "Saúde",
+  "Trabalho",
+  "Educação",
+  "Cultura",
+  "Direitos da Cidadania",
+  "Urbanismo",
+  "Habitação",
+  "Saneamento",
+  "Gestão Ambiental",
+  "Ciência e Tecnologia",
+  "Agricultura",
+  "Organização Agrária",
+  "Indústria",
+  "Comércio e Serviços",
+  "Comunicações",
+  "Energia",
+  "Transporte",
+  "Desporto e Lazer",
+  "Encargos Especiais",
+  "Reserva de Contingência"
+)
+
 df_agg_fn <- df_base_fn |>
   dplyr::filter(!is.na(descricao_funcao), nchar(trimws(descricao_funcao)) > 0) |>
+  dplyr::mutate(descricao_funcao = stringr::str_squish(descricao_funcao)) |>
+  dplyr::filter(descricao_funcao %in% funcoes_desejadas) |>
   dplyr::group_by(subprefeitura, descricao_funcao) |>
   dplyr::summarise(valor_executado = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") |>
-  dplyr::group_by(subprefeitura) |>
-  dplyr::mutate(
-    total_sp = sum(valor_executado),
-    pct      = valor_executado / total_sp * 100,
-    descricao_funcao = dplyr::if_else(pct < 5, "Outras funcoes", descricao_funcao)
-  ) |>
-  dplyr::ungroup() |>
-  dplyr::group_by(subprefeitura, descricao_funcao) |>
-  dplyr::summarise(valor_executado = sum(valor_executado), .groups = "drop")
+  dplyr::mutate(label_display = descricao_funcao)
 
-# 4) Diagnostico
-funcoes_top5_fn <- df_agg_fn |>
-  dplyr::filter(descricao_funcao != "Outras funcoes") |>
-  dplyr::group_by(descricao_funcao) |>
-  dplyr::summarise(total = sum(valor_executado), .groups = "drop") |>
-  dplyr::arrange(dplyr::desc(total)) |>
-  dplyr::slice_head(n = 5) |>
-  dplyr::pull(descricao_funcao)
-cat("\nFuncoes distintas:", dplyr::n_distinct(df_agg_fn$descricao_funcao), "\n")
-for (j in seq_along(funcoes_top5_fn)) cat(" ", j, ".", funcoes_top5_fn[j], "\n")
+cat("Funções distintas após agregação:", dplyr::n_distinct(df_agg_fn$descricao_funcao), "\n")
+```
 
-# 5) Paleta IDRGP
-cores_idrgp_fn <- c("#d97a0f","#0ea1cf","#1A1442","#6B2D5C","#D4A017",
-                    "#2E86AB","#A23B72","#F18F01","#C73E1D","#3B1F2B")
-fns_prin <- sort(setdiff(unique(df_agg_fn$descricao_funcao), "Outras funcoes"))
-pal_fn   <- setNames(c(rep_len(cores_idrgp_fn, length(fns_prin)), "gray70"),
-                     c(fns_prin, "Outras funcoes"))
+## 20.9 - exportação dos gráficos e qualificação das informações de visualização
 
-# 6) Pasta de saida
+```{r tabela_grafico_acoes_regionalizadas_graficos, echo=FALSE, message=FALSE, warning=FALSE}
+
+# 7) Paleta para funções
+manual_palette_fn <- c(
+  "Legislativa" = "#1F77B4",
+  "Judiciária" = "#FF7F0E",
+  "Essencial à Justiça" = "#2CA02C",
+  "Administração" = "#D62728",
+  "Defesa Nacional" = "#9467BD",
+  "Segurança Pública" = "#8C564B",
+  "Relações Exteriores" = "#E377C2",
+  "Assistência Social" = "#7F7F7F",
+  "Previdência Social" = "#BCBD22",
+  "Saúde" = "#17BECF",
+  "Trabalho" = "#393B79",
+  "Educação" = "#6B6ECF",
+  "Cultura" = "#9C9EDE",
+  "Direitos da Cidadania" = "#DB8E5E",
+  "Urbanismo" = "#AD494A",
+  "Habitação" = "#A55194",
+  "Saneamento" = "#6B6E00",
+  "Gestão Ambiental" = "#B5CF6B",
+  "Ciência e Tecnologia" = "#8C6D31",
+  "Agricultura" = "#CEDB9C",
+  "Organização Agrária" = "#E7BA52",
+  "Indústria" = "#E7969C",
+  "Comércio e Serviços" = "#F7B6D2",
+  "Comunicações" = "#C49C94",
+  "Energia" = "#2B8CBE",
+  "Transporte" = "#FF9F1C",
+  "Desporto e Lazer" = "#2ECC71",
+  "Encargos Especiais" = "#7D3C98",
+  "Reserva de Contingência" = "#34495E"
+)
+
+fns_prin <- sort(unique(df_agg_fn$descricao_funcao))
+missing_fns <- setdiff(fns_prin, names(manual_palette_fn))
+additional_colors <- if (length(missing_fns) > 0) {
+  setNames(grDevices::hcl.colors(length(missing_fns), palette = "Dynamic"), missing_fns)
+} else {
+  character()
+}
+
+pal_fn <- c(manual_palette_fn, additional_colors)[fns_prin]
+
+# 8) Pasta de saída dos gráficos
 pasta_gf <- file.path(pasta_saida, "graficos_funcao_subprefeitura")
 if (!dir.exists(pasta_gf)) dir.create(pasta_gf, recursive = TRUE)
 
-# 7) Loop: 1 grafico por subprefeitura
 lista_sps_fn <- sort(unique(df_siglas$subprefeitura))
-cat("\nGerando", length(lista_sps_fn), "graficos compactos...\n")
+cat("\nGerando", length(lista_sps_fn), "gráficos (treemap) de função por subprefeitura...\n")
 
 for (i in seq_along(lista_sps_fn)) {
   sp_nm <- lista_sps_fn[i]
   sp_sg <- df_siglas$sigla[df_siglas$subprefeitura == sp_nm][1]
   if (is.na(sp_sg)) sp_sg <- ""
-  cat("Gerando grafico", i, "/", length(lista_sps_fn), ":", sp_nm, "(", sp_sg, ")\n")
 
   df_sp_fn <- df_agg_fn |> dplyr::filter(subprefeitura == sp_nm)
-  if (nrow(df_sp_fn) == 0) { warning("Sem dados para: ", sp_nm); next }
+  if (nrow(df_sp_fn) == 0) {
+    warning("Sem dados para: ", sp_nm)
+    next
+  }
 
-  niveis_fn <- c(
-    df_sp_fn |> dplyr::filter(descricao_funcao != "Outras funcoes") |>
-      dplyr::arrange(valor_executado) |> dplyr::pull(descricao_funcao),
-    if ("Outras funcoes" %in% df_sp_fn$descricao_funcao) "Outras funcoes"
-  )
+  # Preparar dados para treemap: ordenar por valor decrescente e limpar labels
   df_sp_fn <- df_sp_fn |>
-    dplyr::mutate(descricao_funcao = factor(descricao_funcao, levels = niveis_fn))
+    dplyr::arrange(desc(valor_executado))
 
   g_fn <- ggplot2::ggplot(
     df_sp_fn,
-    ggplot2::aes(x = valor_executado, y = descricao_funcao, fill = descricao_funcao)
+    ggplot2::aes(area = valor_executado, fill = descricao_funcao, label = label_display)
   ) +
-    ggplot2::geom_col(width = 0.7, show.legend = FALSE) +
-    ggplot2::geom_text(
-      ggplot2::aes(label = paste0("R$ ", round(valor_executado / 1e6, 1), "M")),
-      hjust = -0.1, size = 1.8, color = "gray20"
+    treemapify::geom_treemap(color = "white", size = 0.5, show.legend = TRUE) +
+    treemapify::geom_treemap_text(
+      fontface = "bold",
+      color = "white",
+      place = "centre",
+      size = 8,
+      grow = FALSE
     ) +
-    ggplot2::scale_fill_manual(values = pal_fn, na.value = "gray70") +
-    ggplot2::scale_x_continuous(
-      labels = scales::label_number(scale_cut = scales::cut_short_scale(),
-                                    prefix = "R$ ", decimal.mark = ","),
-      expand = ggplot2::expansion(mult = c(0, 0.30))
+    ggplot2::scale_fill_manual(
+      values = pal_fn,
+      na.value = "gray70",
+      guide = ggplot2::guide_legend(
+        title = "Função",
+        title.position = "top",
+        label.theme = ggplot2::element_text(size = 7),
+        keywidth = ggplot2::unit(1.2, "lines"),
+        keyheight = ggplot2::unit(0.8, "lines"),
+        ncol = 1
+      )
     ) +
     ggplot2::labs(
-      title = paste0("Subprefeitura ", sp_nm, " (", sp_sg, ")"),
-      x = "Valor executado (R$)", y = NULL
+      title = paste0("Funções de Gasto — Subprefeitura ", sp_nm, " (", sp_sg, ")"),
+      subtitle = "Ciclo 2022–2025 | Tamanho proporcional ao valor executado"
     ) +
-    ggplot2::theme_minimal(base_size = 6) +
+    ggplot2::theme_minimal(base_size = 10) +
     ggplot2::theme(
       text               = ggplot2::element_text(family = "sans"),
-      plot.title         = ggplot2::element_text(face = "bold", size = 8, hjust = 0),
-      axis.text.y        = ggplot2::element_text(size = 5),
-      axis.text.x        = ggplot2::element_text(size = 5),
-      axis.title.x       = ggplot2::element_text(size = 6),
-      axis.title.y       = ggplot2::element_blank(),
-      legend.position    = "none",
-      plot.margin        = ggplot2::margin(2, 2, 2, 2),
-      panel.grid.major.y = ggplot2::element_blank(),
-      panel.grid.minor   = ggplot2::element_blank()
+      plot.title         = ggplot2::element_text(face = "bold", size = 11, hjust = 0),
+      plot.subtitle      = ggplot2::element_text(size = 8, color = "gray60"),
+      legend.position    = "right",
+      legend.title       = ggplot2::element_text(size = 8, face = "bold"),
+      legend.text        = ggplot2::element_text(size = 7),
+      legend.key         = ggplot2::element_rect(fill = "white", color = NA),
+      plot.margin        = ggplot2::margin(8, 8, 8, 8),
+      panel.grid         = ggplot2::element_blank(),
+      axis.text          = ggplot2::element_blank(),
+      axis.title         = ggplot2::element_blank()
     )
 
   arq_fn <- paste0("grafico_funcao_", janitor::make_clean_names(sp_nm), ".png")
   ggplot2::ggsave(file.path(pasta_gf, arq_fn), g_fn,
-                  width = 16, height = 5, units = "cm", dpi = 300)
+                  width = 12, height = 10, units = "cm", dpi = 300)
 }
 
-cat("\n\u2705", length(lista_sps_fn), "graficos exportados em:", pasta_gf, "\n")
+cat("\n✅", length(lista_sps_fn), "treemaps exportados em:", pasta_gf, "\n")
 ```
-
-
-
-
+```
 
 
 
@@ -2125,7 +2390,7 @@ cat("  IDRGP 2022–2025 — Relatório concluído com sucesso.\n")
 cat("===========================================================\n\n")
 cat("  Ciclo analisado:      2022 a 2025\n")
 cat("  Valor 2025:           R$", format(total_valor, big.mark = ".", decimal.mark = ","), "\n")
-cat("  Total ciclo:          R$", format(sum(df_ciclo$valor_2022_a_2025),
+cat("  Total ciclo:          R$", format(sum(df_ciclo$valor_2022_a_2025), 
                                          big.mark = ".", decimal.mark = ","), "\n")
 cat("  Subprefeituras:       32\n")
 cat("  Método estatístico:  ", toupper(metodo_estatistico), "\n")
