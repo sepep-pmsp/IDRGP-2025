@@ -4,8 +4,8 @@ title: |
   \textbf{Índice de Distribuição Regional do Gasto Público}\\
   \large Análise do Ciclo PPA 2022--2025
 author: |
-  Coordenadoria de Planejamento e Monitoramento de Ações (CPMA)\\
-  Secretaria de Inovação e Monitoramento de Entregas (SIME)\\
+  Coordenadoria de Planejamento, Monitoramento e Avaliação (CPMA)\\
+  Secretária Executiva de Informações e Monitoramento Estratégicos (SIME)\\
   Secretaria Municipal de Planejamento Urbano (SEPLAN)\\
   Prefeitura do Município de São Paulo
 date: "`r format(Sys.Date(), '%B de %Y')`"
@@ -154,7 +154,7 @@ tbl_abnt <- function(df, legenda = NULL, digits = 2, fonte = NULL) {
 
 {\large \textbf{PREFEITURA DO MUNICÍPIO DE SÃO PAULO}}\\[0.3cm]
 {\normalsize Secretaria Municipal de Planejamento Urbano — SEPLAN}\\[0.1cm]
-{\normalsize Secretaria de Inovação e Monitoramento de Entregas — SIME}\\[0.1cm]
+{\normalsize Secretária Executiva de Informações e Monitoramento Estratégicos — SIME}\\[0.1cm]
 {\normalsize Coordenadoria de Planejamento e Monitoramento de Ações — CPMA}
 
 \vspace{3cm}
@@ -484,8 +484,8 @@ Os valores analisados correspondem à **liquidação orçamentária**. Ações c
 
 \vspace{0.8cm}
 
-{\large \textbf{Coordenadoria de Planejamento e Monitoramento de Ações}}\\[0.2cm]
-{\normalsize Secretaria de Inovação e Monitoramento de Entregas (SIME)}\\[0.1cm]
+{\large \textbf{Coordenadoria de Planejamento, Monitoramento e Avaliação}}\\[0.2cm]
+{\normalsize Secretária Executiva de Informações e Monitoramento Estratégicos (SIME)}\\[0.1cm]
 {\normalsize Secretaria Municipal de Planejamento Urbano (SEPLAN)}\\[0.1cm]
 {\normalsize Prefeitura do Município de São Paulo}
 

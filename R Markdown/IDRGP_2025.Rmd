@@ -1,4 +1,4 @@
-﻿---
+---
 ---
 title: "Índice de Distribuição Regional do Gasto Público (IDRGP)"
 subtitle: "Análise do Ciclo PPA 2022–2025"
@@ -2327,106 +2327,118 @@ cat("✅ Dados para treemaps prontos:",
 ```{r funcao_treemap_graficos, echo=FALSE, message=FALSE, warning=FALSE}
 if (!requireNamespace("treemapify", quietly = TRUE))
   stop("Instale o pacote treemapify: install.packages('treemapify')")
+if (!requireNamespace("patchwork", quietly = TRUE))
+  stop("Instale o pacote patchwork: install.packages('patchwork')")
 
 # Pasta de saída
 pasta_tm <- file.path(pasta_saida, "graficos_funcao_subprefeitura")
 if (!dir.exists(pasta_tm)) dir.create(pasta_tm, recursive = TRUE)
 
 # ============================================================================
-# LEGENDA GLOBAL — construída uma vez, fora do loop
-# Minimalista, lateral, visual sóbrio/metálico
+# LEGENDA GLOBAL — 2 colunas com separação MÁXIMA
+# Col1: ancorada na borda esquerda
+# Col2: ancorada na borda direita (máximo afastamento)
 # ============================================================================
 funcoes_presentes <- sort(unique(df_tm$funcao))
 pal_ativa         <- PAL_FUNCAO[funcoes_presentes]
+n_fn              <- length(funcoes_presentes)
+
+n_col    <- 2
+n_lin    <- ceiling(n_fn / n_col)
+espaco_v <- 0.5     # espaçamento vertical entre linhas
+
+# Espaço total do eixo X (coordenadas)
+total_x  <- 10.0    # largura do canvas da legenda em coordenadas
+
+# Posições absolutas — col1 à esquerda, col2 à direita
+pos_c1_sq  <- 0.3               # centro do quadradinho col1
+pos_c1_txt <- 0.85              # início do texto col1
+pos_c2_sq  <- total_x - 4.0    # centro do quadradinho col2 (borda direita - margem texto)
+pos_c2_txt <- total_x - 3.45   # início do texto col2
 
 legenda_df <- tibble::tibble(
-  funcao = names(pal_ativa),
-  cor    = unname(pal_ativa),
-  x      = 1, y = seq_along(pal_ativa)
-)
+  funcao  = funcoes_presentes,
+  col_idx = rep(1:n_col, each = n_lin)[seq_len(n_fn)],
+  row_idx = rep(seq_len(n_lin), times = n_col)[seq_len(n_fn)] * espaco_v
+) |>
+  dplyr::mutate(
+    x_sq  = dplyr::if_else(col_idx == 1, pos_c1_sq,  pos_c2_sq),
+    x_txt = dplyr::if_else(col_idx == 1, pos_c1_txt, pos_c2_txt)
+  )
 
-p_legenda <- ggplot2::ggplot(legenda_df,
-    ggplot2::aes(x = x, y = y, fill = funcao)) +
-  ggplot2::geom_tile(width = 0.6, height = 0.8, color = "white", linewidth = 0.3) +
+p_legenda <- ggplot2::ggplot(legenda_df) +
+  ggplot2::geom_tile(
+    ggplot2::aes(x = x_sq, y = -row_idx, fill = funcao),
+    width = 0.65, height = 0.9,
+    color = "white", linewidth = 0.25
+  ) +
   ggplot2::geom_text(
-    ggplot2::aes(label = funcao),
-    x = 1.4, hjust = 0, size = 2.5, color = "#333333", family = "sans"
+    ggplot2::aes(x = x_txt, y = -row_idx, label = funcao),
+    hjust      = 0,
+    size       = 2.0,
+    color      = "#222222",
+    family     = "sans",
+    lineheight = 0.6
   ) +
   ggplot2::scale_fill_manual(values = pal_ativa, guide = "none") +
-  ggplot2::scale_y_continuous(expand = c(0.02, 0)) +
-  ggplot2::xlim(0.6, 5) +
+  ggplot2::xlim(-0.2, total_x + 0.2) +
+  ggplot2::ylim(-(n_lin * espaco_v + 0.8), espaco_v * 0.3) +
   ggplot2::theme_void() +
-  ggplot2::theme(plot.margin = ggplot2::margin(4, 4, 4, 4))
+  ggplot2::theme(plot.margin = ggplot2::margin(6, 2, 6, 2))
+
 
 # ============================================================================
-# FUNÇÃO: gera 1 treemap limpo por subprefeitura
+# FUNÇÃO: 1 treemap limpo — SEM texto nos tiles, apenas cor
 # ============================================================================
 gerar_treemap <- function(sp_nome, sp_sigla, dados) {
 
-  # Garante que funções com valor zero não entrem
-  dados <- dados |> dplyr::filter(valor_total > 0) |>
+  dados <- dados |>
+    dplyr::filter(valor_total > 0) |>
     dplyr::arrange(dplyr::desc(valor_total))
 
   if (nrow(dados) == 0) return(NULL)
-
-  # Label: nome completo se tile grande, sigla se pequena
-  total_sp <- sum(dados$valor_total)
-  dados <- dados |>
-    dplyr::mutate(
-      pct    = valor_total / total_sp,
-      # Exibe nome completo apenas se tile >= 5% do total
-      label  = dplyr::if_else(pct >= 0.05, funcao, "")
-    )
 
   ggplot2::ggplot(dados,
     ggplot2::aes(
       area  = valor_total,
       fill  = funcao,
-      label = label
+      label = ""           # label vazio: bloqueia qualquer texto nos tiles
     )
   ) +
     treemapify::geom_treemap(
       color     = "white",
-      linewidth = 0.8,
+      linewidth = 1.2,
       show.legend = FALSE
     ) +
-    treemapify::geom_treemap_text(
-      colour    = "white",
-      place     = "centre",
-      size      = 7,
-      fontface  = "bold",
-      grow      = FALSE,
-      reflow    = TRUE,
-      min.size  = 3
-    ) +
+    # EXPLICITAMENTE sem geom_treemap_text
     ggplot2::scale_fill_manual(
       values   = PAL_FUNCAO,
-      na.value = "#AAAAAA",
-      guide    = "none"         # legenda separada (p_legenda)
+      na.value = "#CCCCCC",
+      guide    = "none"
     ) +
     ggplot2::labs(
       title    = paste0(sp_nome, "  (", sp_sigla, ")"),
-      subtitle = "Distribuição por função orçamentária — Ciclo 2022–2025"
+      subtitle = "Distribuição por função orçamentária — Ciclo PPA 2022–2025"
     ) +
-    ggplot2::theme_void(base_size = 9) +
+    ggplot2::theme_void(base_size = 8) +
     ggplot2::theme(
-      text         = ggplot2::element_text(family = "sans"),
-      plot.title   = ggplot2::element_text(
-        size = 10, face = "bold", hjust = 0,
-        color = "#1a1a2e", margin = ggplot2::margin(b = 2)
+      text          = ggplot2::element_text(family = "sans"),
+      plot.title    = ggplot2::element_text(
+        size = 9, face = "bold", hjust = 0,
+        color = "#1a1a2e", margin = ggplot2::margin(b = 1)
       ),
       plot.subtitle = ggplot2::element_text(
-        size = 7, color = "#666666", hjust = 0,
-        margin = ggplot2::margin(b = 4)
+        size = 6, color = "#666666", hjust = 0,
+        margin = ggplot2::margin(b = 3)
       ),
-      plot.margin  = ggplot2::margin(6, 6, 6, 6),
+      plot.margin     = ggplot2::margin(4, 4, 4, 4),
       plot.background = ggplot2::element_rect(fill = "white", color = NA)
     )
 }
 
 # ============================================================================
-# LOOP: gera e exporta os 32 treemaps
-# Cada PNG = treemap (esquerda 75%) + legenda compacta (direita 25%)
+# LOOP: 32 treemaps — formato mais quadrado: 14 x 10 cm
+# Layout: treemap (60%) | legenda (40%)
 # ============================================================================
 sps <- df_siglas |> dplyr::arrange(subprefeitura)
 cat("Gerando", nrow(sps), "treemaps...\n")
@@ -2436,26 +2448,24 @@ for (i in seq_len(nrow(sps))) {
   sp_sg <- sps$sigla[i]
 
   dados_sp <- df_tm |> dplyr::filter(subprefeitura == sp_nm)
-  if (nrow(dados_sp) == 0) {
-    warning("Sem dados para: ", sp_nm); next
-  }
+  if (nrow(dados_sp) == 0) { warning("Sem dados: ", sp_nm); next }
 
   p_tm <- gerar_treemap(sp_nm, sp_sg, dados_sp)
   if (is.null(p_tm)) next
 
-  # Combina treemap + legenda lateral com patchwork
   p_final <- patchwork::wrap_plots(
     p_tm,
     p_legenda,
-    widths = c(3, 1)          # 75% treemap | 25% legenda
+    widths = c(1.5, 1)      # ~60% treemap | ~40% legenda
   ) +
     patchwork::plot_annotation(
-      caption = "Elaboração: CPMA/SIME/SEPLAN/PMSP | Fonte: SF-PMSP",
+      caption = "Elaboração: CPMA/SIME/SEPLAN/PMSP  |  Fonte: SF-PMSP",
       theme   = ggplot2::theme(
         plot.caption = ggplot2::element_text(
-          size = 6, color = "#888888", hjust = 1,
-          margin = ggplot2::margin(t = 4)
-        )
+          size = 5, color = "#999999", hjust = 1,
+          margin = ggplot2::margin(t = 3)
+        ),
+        plot.background = ggplot2::element_rect(fill = "white", color = NA)
       )
     )
 
@@ -2465,14 +2475,153 @@ for (i in seq_len(nrow(sps))) {
   ggplot2::ggsave(
     filename = arq_out,
     plot     = p_final,
-    width    = 16, height = 5,   # 16x5cm — padrão executivo do projeto
+    width    = 14,   # mais quadrado que 16x5
+    height   = 10,
     units    = "cm",
     dpi      = 300
   )
 }
 
 cat("✅", nrow(sps), "treemaps exportados em:", pasta_tm, "\n")
+
+# ============================================================================
+# EXPORTAÇÃO EXCEL — 1 arquivo com 32 abas (uma por subprefeitura)
+# Cada aba: funções orçamentárias × anos, com totais e formatação institucional
+# ============================================================================
+if (!requireNamespace("openxlsx", quietly = TRUE))
+  stop("Instale o pacote openxlsx: install.packages('openxlsx')")
+
+wb <- openxlsx::createWorkbook()
+
+# --- Estilos ---
+st_titulo <- openxlsx::createStyle(
+  fontName   = "Calibri", fontSize = 11, fontColour = "#FFFFFF",
+  fgFill     = "#1a1a2e", halign = "LEFT", valign = "center",
+  textDecoration = "bold", wrapText = TRUE
+)
+st_cab <- openxlsx::createStyle(
+  fontName   = "Calibri", fontSize = 10, fontColour = "#FFFFFF",
+  fgFill     = "#0066A3", halign = "CENTER", valign = "center",
+  textDecoration = "bold", border = "Bottom", borderColour = "#FFFFFF"
+)
+st_funcao <- openxlsx::createStyle(
+  fontName = "Calibri", fontSize = 9,
+  halign = "LEFT", valign = "center"
+)
+st_valor <- openxlsx::createStyle(
+  fontName = "Calibri", fontSize = 9,
+  numFmt   = "R$ #,##0.00",
+  halign   = "RIGHT"
+)
+st_total <- openxlsx::createStyle(
+  fontName = "Calibri", fontSize = 9,
+  numFmt   = "R$ #,##0.00",
+  halign   = "RIGHT", textDecoration = "bold",
+  fgFill   = "#F0F0F0",
+  border   = "Top", borderColour = "#999999"
+)
+st_alt <- openxlsx::createStyle(fgFill = "#F7F9FC")  # linha alternada
+
+anos_disp <- sort(unique(df_fn$ano))
+
+for (i in seq_len(nrow(sps))) {
+  sp_nm <- sps$subprefeitura[i]
+  sp_sg <- sps$sigla[i]
+
+  # Nome da aba: sigla + nome (max 31 chars — limite do Excel)
+  aba_nm <- substr(paste0(sp_sg, " - ", sp_nm), 1, 31)
+  openxlsx::addWorksheet(wb, sheetName = aba_nm, gridLines = FALSE)
+
+  # Dados da subprefeitura: função × ano (pivot wide)
+  df_sp <- df_fn |>
+    dplyr::filter(subprefeitura == sp_nm, funcao %in% names(PAL_FUNCAO)) |>
+    dplyr::group_by(funcao, ano) |>
+    dplyr::summarise(valor = sum(valor, na.rm = TRUE), .groups = "drop") |>
+    tidyr::pivot_wider(
+      names_from  = ano,
+      values_from = valor,
+      values_fill = 0
+    ) |>
+    dplyr::arrange(funcao)
+
+  # Garante colunas para todos os anos disponíveis
+  for (a in as.character(anos_disp)) {
+    if (!a %in% names(df_sp)) df_sp[[a]] <- 0
+  }
+  df_sp <- df_sp |> dplyr::select(funcao, dplyr::all_of(as.character(anos_disp)))
+
+  # Linha de total
+  totais <- df_sp |>
+    dplyr::summarise(
+      funcao = "TOTAL",
+      dplyr::across(dplyr::where(is.numeric), sum, na.rm = TRUE)
+    )
+  df_export <- dplyr::bind_rows(df_sp, totais)
+
+  # Cabeçalhos
+  nomes_col <- c("Função Orçamentária", as.character(anos_disp))
+  names(df_export) <- nomes_col
+
+  # --- Linha 1: título da aba ---
+  openxlsx::writeData(wb, aba_nm,
+    x = paste0("Subprefeitura ", sp_nm, " (", sp_sg,
+                ") — Execução Orçamentária por Função | Ciclo 2022–2025"),
+    startRow = 1, startCol = 1
+  )
+  openxlsx::mergeCells(wb, aba_nm, cols = 1:(1 + length(anos_disp)), rows = 1)
+  openxlsx::addStyle(wb, aba_nm, st_titulo,
+    rows = 1, cols = 1:(1 + length(anos_disp)), gridExpand = TRUE)
+  openxlsx::setRowHeights(wb, aba_nm, rows = 1, heights = 22)
+
+  # --- Linha 2: cabeçalho das colunas ---
+  openxlsx::writeData(wb, aba_nm,
+    x = as.data.frame(t(nomes_col)),
+    startRow = 2, startCol = 1, colNames = FALSE
+  )
+  openxlsx::addStyle(wb, aba_nm, st_cab,
+    rows = 2, cols = 1:(1 + length(anos_disp)), gridExpand = TRUE)
+  openxlsx::setRowHeights(wb, aba_nm, rows = 2, heights = 18)
+
+  # --- Linhas 3+: dados ---
+  n_dados <- nrow(df_export)
+  openxlsx::writeData(wb, aba_nm,
+    x = df_export, startRow = 3, startCol = 1, colNames = FALSE
+  )
+
+  # Estilos de dados
+  for (r in seq_len(n_dados)) {
+    linha_r <- r + 2  # offset pelo título + cabeçalho
+    # Linhas alternadas
+    if (r %% 2 == 0 && r < n_dados) {
+      openxlsx::addStyle(wb, aba_nm, st_alt,
+        rows = linha_r, cols = 1:(1 + length(anos_disp)), gridExpand = TRUE)
+    }
+    # Coluna de função
+    openxlsx::addStyle(wb, aba_nm, st_funcao,
+      rows = linha_r, cols = 1, stack = TRUE)
+    # Colunas de valor
+    openxlsx::addStyle(wb, aba_nm, st_valor,
+      rows = linha_r, cols = 2:(1 + length(anos_disp)), stack = TRUE, gridExpand = TRUE)
+  }
+
+  # Linha de total (última)
+  openxlsx::addStyle(wb, aba_nm, st_total,
+    rows = 2 + n_dados, cols = 1:(1 + length(anos_disp)), gridExpand = TRUE)
+
+  # Larguras das colunas
+  openxlsx::setColWidths(wb, aba_nm,
+    cols  = 1:(1 + length(anos_disp)),
+    widths = c(30, rep(16, length(anos_disp)))
+  )
+  openxlsx::freezePane(wb, aba_nm, firstRow = TRUE, firstCol = FALSE)
+}
+
+# --- Salva o arquivo ---
+arq_xl <- file.path(pasta_saida, "funcoes_orcamentarias_por_subprefeitura.xlsx")
+openxlsx::saveWorkbook(wb, file = arq_xl, overwrite = TRUE)
+cat("✅ Excel com", nrow(sps), "abas exportado em:", arq_xl, "\n")
 ```
+
 
 
 ## 21. Conclusão automatizada
