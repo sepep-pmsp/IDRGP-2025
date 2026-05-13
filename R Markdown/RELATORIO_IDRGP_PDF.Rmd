@@ -1,217 +1,347 @@
 ---
-title: "Relatório Executivo IDRGP — Ciclo PPA 2022–2025"
-subtitle: "Análise da Distribuição Territorial do Gasto Público"
-author: "SEPLAN/SIME/CPMA — Prefeitura de São Paulo"
-date: "`r format(Sys.Date(), '%d de %B de %Y')`"
-lang: "pt-BR"
+title: |
+  \vspace{2cm}
+  \textbf{Índice de Distribuição Regional do Gasto Público}\\
+  \large Análise do Ciclo PPA 2022--2025
+author: |
+  Coordenadoria de Planejamento e Monitoramento de Ações (CPMA)\\
+  Secretaria de Inovação e Monitoramento de Entregas (SIME)\\
+  Secretaria Municipal de Planejamento Urbano (SEPLAN)\\
+  Prefeitura do Município de São Paulo
+date: "`r format(Sys.Date(), '%B de %Y')`"
+lang: pt-BR
 output:
   pdf_document:
-    toc: true
-    toc_depth: 3
-    number_sections: false
+    toc: false
+    number_sections: true
     latex_engine: xelatex
     keep_tex: false
-geometry: margin=2cm
+    fig_caption: true
+geometry:
+  - top=3cm
+  - bottom=2cm
+  - left=3cm
+  - right=2cm
 fontsize: 12pt
-linestretch: 1.2
+linestretch: 1.5
+indent: true
 header-includes:
+  # --- Pacotes essenciais ---
+  - \usepackage{fontspec}
+  - \usepackage{polyglossia}
+  - \setmainlanguage{portuguese}
   - \usepackage{float}
+  - \floatplacement{figure}{H}
+  - \floatplacement{table}{H}
   - \usepackage{booktabs}
   - \usepackage{longtable}
   - \usepackage{array}
-  - \usepackage{caption}
+  - \usepackage{multirow}
   - \usepackage{graphicx}
+  - \usepackage{caption}
+  - \usepackage{setspace}
+  - \usepackage{indentfirst}
+  - \usepackage{titlesec}
+  - \usepackage{titletoc}
   - \usepackage{fancyhdr}
-  - \usepackage{titling}
-  - \captionsetup{font=small,labelfont=bf}
+  - \usepackage{xcolor}
+  - \usepackage{hyperref}
+  - \usepackage{microtype}
+  - \usepackage{geometry}
+  - \usepackage{ragged2e}
+  - \usepackage{etoolbox}
+  # --- Fonte ABNT: Times New Roman ---
+  - \setmainfont{Times New Roman}
+  - \setsansfont{Arial}
+  # --- Cor institucional PMSP ---
+  - \definecolor{pmsp}{RGB}{0, 102, 163}
+  # --- Cabeçalho e rodapé ABNT ---
   - \pagestyle{fancy}
   - \fancyhf{}
-  - \fancyhead[L]{\footnotesize Relatório IDRGP 2025}
-  - \fancyhead[R]{\footnotesize SEPLAN/SIME/CPMA}
+  - \fancyhead[R]{\footnotesize\textcolor{gray}{IDRGP 2025 — CPMA/SIME/SEPLAN/PMSP}}
   - \fancyfoot[C]{\thepage}
   - \renewcommand{\headrulewidth}{0.4pt}
-  - \pretitle{\begin{center}\LARGE\bfseries}
-  - \posttitle{\end{center}}
+  - \renewcommand{\footrulewidth}{0pt}
+  # --- Títulos de seção ABNT ---
+  - \titleformat{\section}{\large\bfseries}{}{0em}{}[\vspace{0.2em}\hrule\vspace{0.5em}]
+  - \titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+  - \titleformat{\subsubsection}{\normalsize\itshape}{}{0em}{}
+  - \titlespacing{\section}{0pt}{1.5em}{0.8em}
+  - \titlespacing{\subsection}{0pt}{1em}{0.5em}
+  # --- Legendas centralizadas (ABNT: acima de tabelas, abaixo de figuras) ---
+  - \captionsetup[figure]{font=small, labelfont=bf, justification=centering, position=below}
+  - \captionsetup[table]{font=small, labelfont=bf, justification=centering, position=above}
+  # --- Hyperlinks ---
+  - \hypersetup{colorlinks=true, linkcolor=pmsp, urlcolor=pmsp, citecolor=pmsp}
+  # --- Parágrafo ABNT: recuo 1,25cm, sem espaço entre parágrafos ---
+  - \setlength{\parindent}{1.25cm}
+  - \setlength{\parskip}{0pt}
 ---
 
-```{r setup, include=FALSE}
+```{r setup-pdf, include=FALSE}
+# Proteção Windows MAX_PATH
+.pt <- "C:/Temp/IDRGP"
+if (!dir.exists(.pt)) dir.create(.pt, recursive = TRUE)
+Sys.setenv(TEMP = .pt, TMP = .pt, TMPDIR = .pt)
+
 knitr::opts_chunk$set(
-  echo = FALSE,
-  message = FALSE,
-  warning = FALSE,
-  fig.align = "center",
-  out.width = "100%",
-  dpi = 300
+  echo        = FALSE,
+  message     = FALSE,
+  warning     = FALSE,
+  cache       = FALSE,
+  fig.align   = "center",
+  fig.pos     = "H",
+  out.width   = "90%",
+  dpi         = 300,
+  fig.path    = file.path(.pt, "pdf_fig_"),
+  cache.path  = file.path(.pt, "pdf_cache_")
 )
 
-library(readxl)
-library(dplyr)
-library(tidyr)
-library(stringr)
-library(scales)
-library(knitr)
-library(purrr)
-library(janitor)
-library(kableExtra)
+suppressPackageStartupMessages({
+  library(readxl)
+  library(dplyr)
+  library(tidyr)
+  library(stringr)
+  library(scales)
+  library(knitr)
+  library(kableExtra)
+  library(purrr)
+  library(janitor)
+})
 
 pasta_saida <- "resultados"
 
-# Função auxiliar para tabelas profissionais em LaTeX
-kbl_latex <- function(x, caption = NULL, digits = 2) {
-  knitr::kable(
-    x,
-    format = "latex",
-    booktabs = TRUE,
+# Função de tabela ABNT: legenda ACIMA, fonte 10, linhas alternadas
+tbl_abnt <- function(df, legenda = NULL, digits = 2, fonte = NULL) {
+  tbl <- knitr::kable(
+    df,
+    format    = "latex",
+    booktabs  = TRUE,
     longtable = TRUE,
-    caption = caption,
-    digits = digits,
-    escape = TRUE
+    caption   = legenda,
+    digits    = digits,
+    escape    = FALSE,
+    linesep   = ""
   ) |>
   kableExtra::kable_styling(
-    latex_options = c("striped", "hold_position", "repeat_header"),
-    full_width = FALSE,
-    font_size = 10
+    latex_options  = c("striped", "hold_position", "repeat_header", "scale_down"),
+    full_width     = TRUE,
+    font_size      = 10,
+    stripe_color   = "gray!10"
+  )
+  if (!is.null(fonte)) {
+    tbl <- tbl |>
+      kableExtra::footnote(
+        general           = fonte,
+        general_title     = "Fonte: ",
+        footnote_as_chunk = TRUE,
+        escape            = FALSE
+      )
+  }
+  tbl
+}
+```
+
+<!-- ================================================================ -->
+<!--  CAPA INSTITUCIONAL                                               -->
+<!-- ================================================================ -->
+
+\thispagestyle{empty}
+
+\begin{center}
+
+\vspace*{1cm}
+
+{\large \textbf{PREFEITURA DO MUNICÍPIO DE SÃO PAULO}}\\[0.3cm]
+{\normalsize Secretaria Municipal de Planejamento Urbano — SEPLAN}\\[0.1cm]
+{\normalsize Secretaria de Inovação e Monitoramento de Entregas — SIME}\\[0.1cm]
+{\normalsize Coordenadoria de Planejamento e Monitoramento de Ações — CPMA}
+
+\vspace{3cm}
+
+\textcolor{pmsp}{\rule{12cm}{2pt}}
+
+\vspace{0.8cm}
+
+{\LARGE \textbf{ÍNDICE DE DISTRIBUIÇÃO REGIONAL}}\\[0.4cm]
+{\LARGE \textbf{DO GASTO PÚBLICO (IDRGP)}}\\[1.2cm]
+{\large \textit{Análise do Ciclo PPA 2022–2025}}
+
+\vspace{0.8cm}
+
+\textcolor{pmsp}{\rule{12cm}{2pt}}
+
+\vspace{3.5cm}
+
+{\normalsize São Paulo, `r format(Sys.Date(), '%B de %Y')`}\\[0.2cm]
+{\small Documento de uso institucional — CPMA/SIME/SEPLAN/PMSP}
+
+\end{center}
+
+\newpage
+
+<!-- ================================================================ -->
+<!--  SUMÁRIO (2ª PÁGINA)                                             -->
+<!-- ================================================================ -->
+
+\thispagestyle{empty}
+\tableofcontents
+\newpage
+
+<!-- ================================================================ -->
+<!--  INÍCIO DA NUMERAÇÃO DE PÁGINAS                                  -->
+<!-- ================================================================ -->
+
+\setcounter{page}{1}
+\pagestyle{fancy}
+
+# Resumo Executivo
+
+Este relatório apresenta o balanço da distribuição territorial do gasto público no Município de São Paulo para o ciclo do Plano Plurianual **2022–2025**, utilizando a metodologia do **Índice de Distribuição Regional do Gasto Público (IDRGP)**.
+
+O IDRGP confronta a execução orçamentária real de cada subprefeitura com uma **Alocação Orçamentária Esperada (AOE)**, derivada do **Índice de Vulnerabilidade Urbana (IVU 2025)**. O resultado indica se os recursos estão sendo alocados de forma proporcional às necessidades territoriais.
+
+**Principais dimensões analisadas:**
+
+- **Equidade territorial:** confronto entre gasto executado e metas de vulnerabilidade social;
+- **Adesão orçamentária:** aplicação de testes de hipótese para classificação estatística das subprefeituras;
+- **Evolução histórica:** monitoramento contínuo do índice ao longo dos quatro anos do ciclo;
+- **Regionalização:** grau de territorialização do orçamento por ação governamental.
+
+**Fontes de dados:**
+
+- Execução orçamentária regionalizada — Secretaria Municipal de Fazenda (SF);
+- IDRGP Alvo (AOE/IVU 2025) — SEPLAN/CPMA;
+- Dados cartográficos — GeoSampa (Subprefeituras de São Paulo);
+- Dados populacionais — IBGE, Censos Demográficos 1950–2022.
+
+\newpage
+
+# Resultados Territoriais — Mapas do IDRGP
+
+Os mapas a seguir apresentam a classificação das 32 subprefeituras em relação ao IDRGP Alvo. A legenda indica três categorias estatísticas: **Acima do Alvo**, **Dentro do Alvo** e **Abaixo do Alvo**, determinadas pelo intervalo de confiança de 95% do teste estatístico aplicado.
+
+```{r mapas-gerais, results='asis'}
+mapas <- list(
+  list(arq = "mapa1_idrgp_2022.png",             titulo = "Classificação territorial do IDRGP — 2022"),
+  list(arq = "mapa2_idrgp_2023.png",             titulo = "Classificação territorial do IDRGP — 2023"),
+  list(arq = "mapa3_idrgp_2024.png",             titulo = "Classificação territorial do IDRGP — 2024"),
+  list(arq = "mapa4_idrgp_2025.png",             titulo = "Classificação territorial do IDRGP — 2025"),
+  list(arq = "mapa5_idrgp_agregado_2022_2025.png", titulo = "Balanço consolidado do ciclo PPA (2022–2025)")
+)
+
+for (m in mapas) {
+  p <- file.path(pasta_saida, m$arq)
+  if (file.exists(p)) {
+    cat(sprintf(
+      "\n\n\\begin{figure}[H]\n\\centering\n\\includegraphics[width=0.88\\textwidth]{%s}\n\\caption{%s}\n\\label{fig:%s}\n\\end{figure}\n\n\\newpage\n\n",
+      p, m$titulo, tools::file_path_sans_ext(m$arq)
+    ))
+  }
+}
+```
+
+# Fichas Individuais por Subprefeitura (2025)
+
+As fichas a seguir detalham o desempenho orçamentário e o contexto territorial de cada uma das 32 subprefeituras do município no exercício de 2025.
+
+```{r mapas-individuais, results='asis'}
+pasta_ind <- file.path(pasta_saida, "mapas_subprefeituras")
+if (dir.exists(pasta_ind)) {
+  arqs <- sort(list.files(pasta_ind, pattern = "\\.png$", full.names = TRUE))
+  for (p in arqs) {
+    nm <- basename(p)
+    titulo <- nm |>
+      stringr::str_remove("^mapa_detalhado_") |>
+      stringr::str_remove("\\.png$") |>
+      stringr::str_replace_all("_", " ") |>
+      stringr::str_to_title()
+    cat(sprintf(
+      "\n\n## %s\n\n\\begin{figure}[H]\n\\centering\n\\includegraphics[width=0.90\\textwidth]{%s}\n\\caption{Ficha territorial — %s (2025)}\n\\end{figure}\n\n\\newpage\n\n",
+      titulo, p, titulo
+    ))
+  }
+}
+```
+
+# Análise Comparativa — Gráficos de Desempenho
+
+Os gráficos a seguir detalham a magnitude das diferenças orçamentárias e a evolução histórica do IDRGP por subprefeitura ao longo do ciclo 2022–2025.
+
+```{r graficos, results='asis'}
+graficos <- list(
+  list(arq = "grafico1_idrgp_2025_pct.png",
+       titulo = "Diferença percentual entre IDRGP Real e Alvo — 2025",
+       nota = "Valores positivos indicam alocação acima do esperado pelo IVU 2025."),
+  list(arq = "grafico2_idrgp_agregado_pct.png",
+       titulo = "Diferença percentual consolidada — Ciclo 2022–2025",
+       nota = "Saldo acumulado dos quatro anos do PPA."),
+  list(arq = "grafico3_idrgp_2025_reais.png",
+       titulo = "Execução orçamentária em valores absolutos (R$) — 2025",
+       nota = "Valores nominais. Fonte: SF/PMSP."),
+  list(arq = "grafico4_serie_2022_2025.png",
+       titulo = "Série histórica do IDRGP por subprefeitura (2022–2025)",
+       nota = "Evolução anual do índice real em relação ao alvo.")
+)
+
+for (g in graficos) {
+  p <- file.path(pasta_saida, g$arq)
+  if (file.exists(p)) {
+    cat(sprintf(
+      "\n\n\\begin{figure}[H]\n\\centering\n\\includegraphics[width=0.92\\textwidth]{%s}\n\\caption{%s}\n\\floatfoot{\\footnotesize\\textit{Nota: %s}}\n\\end{figure}\n\n\\newpage\n\n",
+      p, g$titulo, g$nota
+    ))
+  }
+}
+```
+
+# Qualidade da Base — Taxa de Regionalização
+
+A regionalização é o processo de atribuir cada gasto a um território específico. Quanto maior a taxa de regionalização, maior a precisão e confiabilidade do IDRGP. A tabela abaixo apresenta a evolução desse indicador ao longo do ciclo.
+
+```{r tabela-regionalizacao}
+arqs_reg <- file.path(pasta_saida, paste0("regionalizacao_acoes_", 2022:2025, ".xlsx"))
+
+if (all(file.exists(arqs_reg))) {
+  df_reg <- purrr::map2_dfr(arqs_reg, 2022:2025, \(p, ano) {
+    readxl::read_xlsx(p) |> mutate(ano = as.integer(ano))
+  })
+
+  resumo_reg <- df_reg |>
+    group_by(Ano = ano) |>
+    summarise(
+      `Ações analisadas`          = n(),
+      `Valor Total (R$)`          = sum(valor_total, na.rm = TRUE),
+      `Valor Regionalizado (R$)`  = sum(valor_regionalizado, na.rm = TRUE),
+      `Taxa de Regionalização`    = if_else(
+        `Valor Total (R$)` > 0,
+        `Valor Regionalizado (R$)` / `Valor Total (R$)`,
+        NA_real_
+      ),
+      .groups = "drop"
+    ) |>
+    mutate(
+      `Valor Total (R$)`         = label_number(big.mark = ".", decimal.mark = ",", prefix = "R$ ")(`Valor Total (R$)`),
+      `Valor Regionalizado (R$)` = label_number(big.mark = ".", decimal.mark = ",", prefix = "R$ ")(`Valor Regionalizado (R$)`),
+      `Taxa de Regionalização`   = label_percent(accuracy = 0.1)(`Taxa de Regionalização`)
+    )
+
+  tbl_abnt(
+    resumo_reg,
+    legenda = "Evolução da taxa de regionalização do orçamento (2022–2025)",
+    digits  = 0,
+    fonte   = "Secretaria Municipal de Fazenda (SF) e SEPLAN/CPMA/PMSP."
   )
 }
 ```
 
 \newpage
 
-# 1. Resumo Executivo
+# Destaques por Subprefeitura (2025)
 
-Este relatório apresenta o balanço da distribuição territorial do gasto público no Município de São Paulo para o ciclo do PPA 2022–2025, utilizando a metodologia do **Índice de Distribuição Regional do Gasto Público (IDRGP)**.
+## Subprefeituras com maior alocação acima do esperado
 
-O objetivo central é confrontar a execução orçamentária real com um **IDRGP Alvo**, derivado do **Índice de Vulnerabilidade Social (IVU 2025)**. Através desta análise, identifica-se se os recursos estão sendo alocados de forma proporcional às necessidades territoriais.
-
-**Principais Destaques:**
-
-*   **Adesão Orçamentária:** Utilização de testes de hipótese (t-pareado/Wilcoxon) para garantir rigor científico na classificação das subprefeituras.
-*   **Equidade Territorial:** Confronto direto entre o gasto executado e as metas de vulnerabilidade social (IVU 2025).
-*   **Transparência e Rastreabilidade:** Monitoramento contínuo do índice de regionalização, assegurando que o orçamento chegue efetivamente à ponta.
-*   **Contexto Demográfico:** Integração inédita dos dados do Censo 2022 para recalibração das métricas per capita.
-
-\newpage
-
-# 2. Resultados Territoriais — Mapas de Localização
-
-Os mapas a seguir apresentam a classificação das subprefeituras em relação ao IDRGP Alvo. As cores indicam se a região recebeu recursos **Acima**, **Dentro** ou **Abaixo** do esperado estatisticamente.
-
-```{r loop_mapas, results='asis'}
-mapas <- c(
-  "mapa1_idrgp_2022.png",
-  "mapa2_idrgp_2023.png",
-  "mapa3_idrgp_2024.png",
-  "mapa4_idrgp_2025.png",
-  "mapa5_idrgp_agregado_2022_2025.png"
-)
-
-titulos <- c(
-  "2.1. Mapa de Localização 2022",
-  "2.2. Mapa de Localização 2023",
-  "2.3. Mapa de Localização 2024",
-  "2.4. Mapa de Localização 2025",
-  "2.5. Balanço Consolidado do Ciclo (2022–2025)"
-)
-
-for (i in seq_along(mapas)) {
-  path <- file.path(pasta_saida, mapas[i])
-  if (file.exists(path)) {
-    cat(paste0("\n\n## ", titulos[i], "\n\n"))
-    cat(paste0("![", titulos[i], "](", path, ")\n\n"))
-    cat("\n\\newpage\n\n")
-  }
-}
-```
-
-# 3. Fichas Individuais por Subprefeitura (IDRGP 2025)
-
-Abaixo apresentamos o detalhamento geográfico e orçamentário individualizado para cada uma das 32 subprefeituras do município.
-
-```{r loop_mapas_individuais, results='asis'}
-pasta_mapas_ind <- file.path(pasta_saida, "mapas_subprefeituras")
-
-if (dir.exists(pasta_mapas_ind)) {
-  arquivos_mapas <- list.files(pasta_mapas_ind, pattern = "\\.png$", full.names = TRUE)
-  # Ordena alfabeticamente pelo nome do arquivo
-  arquivos_mapas <- sort(arquivos_mapas)
-  
-  for (path in arquivos_mapas) {
-    # Extrai o nome da subprefeitura do arquivo para o título
-    # Ex: mapa_detalhado_vila_mariana.png -> Vila Mariana
-    nome_base <- basename(path)
-    # Tenta recuperar o nome amigável a partir do df_perfil se estiver disponível ou usa o nome do arquivo
-    # Aqui vamos usar o título interno do mapa, então o título da seção pode ser genérico ou extraído.
-    cat(paste0("\n\n## Detalhamento: ", str_to_title(str_replace_all(str_remove(nome_base, "mapa_detalhado_"), "_", " ")), "\n\n"))
-    cat(paste0("![Localização](", path, ")\n\n"))
-    cat("\n\\newpage\n\n")
-  }
-}
-```
-
-# 4. Análise Comparativa — Gráficos de Desempenho
-
-Os gráficos detalham a magnitude das diferenças orçamentárias e a evolução histórica do índice por região.
-
-```{r loop_graficos, results='asis'}
-graficos <- c(
-  "grafico1_idrgp_2025_pct.png",
-  "grafico2_idrgp_agregado_pct.png",
-  "grafico3_idrgp_2025_reais.png",
-  "grafico4_serie_2022_2025.png"
-)
-
-titulos_g <- c(
-  "4.1. Diferença Percentual (Real vs Alvo) — 2025",
-  "4.2. Diferença Percentual Consolidada (Ciclo 2022–2025)",
-  "4.3. Execução Orçamentária em Valores Absolutos (R$)",
-  "4.4. Série Histórica Evolutiva (2022–2025)"
-)
-
-for (i in seq_along(graficos)) {
-  path <- file.path(pasta_saida, graficos[i])
-  if (file.exists(path)) {
-    cat(paste0("\n\n## ", titulos_g[i], "\n\n"))
-    cat(paste0("![", titulos_g[i], "](", path, ")\n\n"))
-    cat("\n\\newpage\n\n")
-  }
-}
-```
-
-# 5. Qualidade da Base de Dados — Regionalização
-
-A regionalização é o processo de atribuir um gasto a um território específico. Quanto maior a regionalização, maior a precisão do IDRGP.
-
-```{r resumo_reg_pdf, results='asis'}
-arquivos_reg <- file.path(pasta_saida, paste0("regionalizacao_acoes_", 2022:2025, ".xlsx"))
-
-if (all(file.exists(arquivos_reg))) {
-  df_reg <- purrr::map2_dfr(arquivos_reg, 2022:2025, \(p, ano) {
-    readxl::read_xlsx(p) |> mutate(ano = as.integer(ano))
-  })
-
-  resumo_reg <- df_reg |>
-    group_by(ano) |>
-    summarise(
-      `Valor Total (R$)` = sum(valor_total, na.rm = TRUE),
-      `Valor Regionalizado (R$)` = sum(valor_regionalizado, na.rm = TRUE),
-      `% Regionalizado` = if_else(`Valor Total (R$)` > 0, `Valor Regionalizado (R$)` / `Valor Total (R$)`, NA_real_),
-      .groups = "drop"
-    ) |>
-    mutate(
-      `Valor Total (R$)` = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(`Valor Total (R$)`),
-      `Valor Regionalizado (R$)` = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(`Valor Regionalizado (R$)`),
-      `% Regionalizado` = label_percent(accuracy = 0.1)(`% Regionalizado`)
-    )
-
-  kbl_latex(resumo_reg, caption = "Evolução da Regionalização do Orçamento (2022–2025)") |> print()
-}
-```
-
-\newpage
-
-# 6. Destaques por Subprefeitura (2025)
-
-```{r destaques_2025, results='asis'}
+```{r tabela-acima}
 arq_int <- file.path(pasta_saida, "df_integrado_2025.xlsx")
 if (file.exists(arq_int)) {
   df_int <- readxl::read_xlsx(arq_int) |>
@@ -219,101 +349,156 @@ if (file.exists(arq_int)) {
 
   top_acima <- df_int |>
     arrange(desc(idrgp_diferenca)) |>
-    slice_head(n = 8) |>
+    slice_head(n = 10) |>
     transmute(
-      Subprefeitura = subprefeitura,
-      `IDRGP Alvo` = label_percent(accuracy = 0.1)(idrgp_alvo),
-      `IDRGP Real` = label_percent(accuracy = 0.1)(idrgp_real),
-      `Diferença` = label_percent(accuracy = 0.1)(idrgp_diferenca),
-      Status = status_estatistico
+      Subprefeitura         = subprefeitura,
+      `IDRGP Alvo (%)`      = label_percent(accuracy = 0.01)(idrgp_alvo),
+      `IDRGP Real (%)`      = label_percent(accuracy = 0.01)(idrgp_real),
+      `Diferença (p.p.)`    = label_percent(accuracy = 0.01)(idrgp_diferenca),
+      `Classificação`       = status_estatistico
     )
 
-  kbl_latex(top_acima, caption = "Subprefeituras com maior saldo positivo (Real > Alvo) — 2025") |> print()
-  
-  cat("\n\n")
-  
+  tbl_abnt(
+    top_acima,
+    legenda = "Subprefeituras com maior saldo positivo — IDRGP Real > Alvo (2025)",
+    digits  = 2,
+    fonte   = "Elaboração CPMA/SIME/SEPLAN/PMSP com base em dados da SF. IC 95\\%."
+  )
+}
+```
+
+\vspace{1cm}
+
+## Subprefeituras com maior alocação abaixo do esperado
+
+```{r tabela-abaixo}
+if (file.exists(arq_int)) {
   top_abaixo <- df_int |>
     arrange(idrgp_diferenca) |>
-    slice_head(n = 8) |>
+    slice_head(n = 10) |>
     transmute(
-      Subprefeitura = subprefeitura,
-      `IDRGP Alvo` = label_percent(accuracy = 0.1)(idrgp_alvo),
-      `IDRGP Real` = label_percent(accuracy = 0.1)(idrgp_real),
-      `Diferença` = label_percent(accuracy = 0.1)(idrgp_diferenca),
-      Status = status_estatistico
+      Subprefeitura         = subprefeitura,
+      `IDRGP Alvo (%)`      = label_percent(accuracy = 0.01)(idrgp_alvo),
+      `IDRGP Real (%)`      = label_percent(accuracy = 0.01)(idrgp_real),
+      `Diferença (p.p.)`    = label_percent(accuracy = 0.01)(idrgp_diferenca),
+      `Classificação`       = status_estatistico
     )
 
-  kbl_latex(top_abaixo, caption = "Subprefeituras com maior saldo negativo (Real < Alvo) — 2025") |> print()
+  tbl_abnt(
+    top_abaixo,
+    legenda = "Subprefeituras com maior saldo negativo — IDRGP Real < Alvo (2025)",
+    digits  = 2,
+    fonte   = "Elaboração CPMA/SIME/SEPLAN/PMSP com base em dados da SF. IC 95\\%."
+  )
 }
 ```
 
 \newpage
 
-# 7. Evolução Populacional Histórica (Censos IBGE)
+# Contexto Demográfico — Evolução Populacional
 
-Integramos a evolução demográfica para contextualizar a pressão por serviços públicos em cada região.
+A integração dos dados dos Censos IBGE 1950–2022 permite contextualizar a pressão por serviços públicos em cada região e fundamentar as metas do IVU 2025.
 
-```{r pop_hist_pdf, results='asis'}
+```{r tabela-populacao}
 arq_pop <- file.path(pasta_saida, "populacao_historica_1950_2022.xlsx")
-if (!file.exists(arq_pop)) {
-  arq_pop <- file.path(pasta_saida, "populacao_historica_1950_2022_distritos.xlsx")
-}
 
 if (file.exists(arq_pop)) {
   df_pop <- readxl::read_xlsx(arq_pop)
-  
-  resumo_reg_pop <- df_pop |>
+
+  resumo_pop <- df_pop |>
     filter(tipo == "Subprefeitura") |>
-    group_by(regiao) |>
-    summarise(across(starts_with("ano_"), sum, na.rm = TRUE), .groups = "drop") |>
-    mutate(perc_var = (ano_2022/ano_2010)-1) |>
-    transmute(
-      Região = regiao,
-      `1950` = ano_1950,
-      `1980` = ano_1980,
-      `2010` = ano_2010,
-      `2022` = ano_2022,
-      `% Var (10-22)` = label_percent(accuracy=0.1)(perc_var)
+    mutate(
+      nome = stringr::str_remove(nome, "^Subprefeitura "),
+      var  = (ano_2022 / ano_2010) - 1
     ) |>
-    mutate(across(where(is.numeric), ~ label_number(big.mark=".", decimal.mark=",")(.x)))
+    transmute(
+      Subprefeitura     = nome,
+      `Pop. 1980`       = label_number(big.mark = ".", decimal.mark = ",")(ano_1980),
+      `Pop. 2010`       = label_number(big.mark = ".", decimal.mark = ",")(ano_2010),
+      `Pop. 2022`       = label_number(big.mark = ".", decimal.mark = ",")(ano_2022),
+      `Var. 2010–2022`  = label_percent(accuracy = 0.1)(var)
+    ) |>
+    arrange(Subprefeitura)
 
-  kbl_latex(resumo_reg_pop, caption = "Crescimento Populacional por Região Administrativa") |> print()
-  
-  cat("\n\n*Nota: Os dados de 2022 foram fundamentais para a recalibração das metas do IVU 2025.*")
+  tbl_abnt(
+    resumo_pop,
+    legenda = "Evolução populacional por subprefeitura — Censos IBGE 1980, 2010 e 2022",
+    digits  = 0,
+    fonte   = "IBGE, Censos Demográficos. Elaboração: CPMA/SIME/SEPLAN/PMSP."
+  )
 }
 ```
 
 \newpage
 
-# 8. Apêndice — Nota Metodológica
+# Nota Metodológica
 
-```{r metodologia_clean, results='asis'}
-arq_base <- "IDRGP_2025.Rmd"
-if (file.exists(arq_base)) {
-  cat("Abaixo, apresenta-se a síntese narrativa dos procedimentos metodológicos adotados no estudo principal.\n\n")
-  
-  linhas <- readLines(arq_base, warn = FALSE, encoding = "UTF-8")
-  i_yaml <- which(trimws(linhas) == "---")
-  if (length(i_yaml) >= 2) linhas <- linhas[(i_yaml[2] + 1):length(linhas)]
-  
-  em_chunk <- FALSE
-  out <- character(0)
-  for (ln in linhas) {
-    if (grepl("^```\\{r", ln)) { em_chunk <- TRUE; next }
-    if (em_chunk && grepl("^```\\s*$", ln)) { em_chunk <- FALSE; next }
-    if (!em_chunk) out <- c(out, ln)
-  }
-  
-  cat(paste(out[1:min(length(out), 500)], collapse = "\n"))
-}
-```
+## O Índice de Distribuição Regional do Gasto Público (IDRGP)
+
+O IDRGP mensura a proporção do gasto público municipal efetivamente executada em cada subprefeitura em relação à proporção esperada com base no grau de vulnerabilidade social do território.
+
+**Fórmula geral:**
+
+$$\text{IDRGP}_i = \frac{G_i}{\sum G_i}$$
+
+Onde $G_i$ é o valor executado na subprefeitura $i$ e $\sum G_i$ é o total municipal regionalizado no período.
+
+$$\Delta_i = \text{IDRGP}_{i}^{\text{Real}} - \text{IDRGP}_{i}^{\text{Alvo}}$$
+
+Onde $\text{IDRGP}_{i}^{\text{Alvo}}$ é a participação proporcional do IVU 2025 da subprefeitura $i$ no total municipal.
+
+## Classificação Estatística
+
+As subprefeituras são classificadas em três categorias, com base no intervalo de confiança de 95\% do teste aplicado:
+
+| Categoria | Critério |
+|:----------|:---------|
+| **Acima do Alvo** | $\Delta_i$ superior ao limite superior do IC 95\% |
+| **Dentro do Alvo** | $\Delta_i$ dentro do IC 95\% |
+| **Abaixo do Alvo** | $\Delta_i$ inferior ao limite inferior do IC 95\% |
+
+O teste de normalidade de Kolmogorov-Smirnov determina se é aplicado o **teste t pareado** (distribuição normal) ou o **teste de Wilcoxon** (distribuição não-normal).
+
+## Dados Utilizados
+
+- Execução orçamentária regionalizada: Secretaria Municipal de Fazenda (SF), anos 2022 a 2025;
+- IVU 2025: Índice de Vulnerabilidade Urbana, elaborado por SEPLAN/CPMA;
+- Shapefile das subprefeituras: GeoSampa, Prefeitura de São Paulo;
+- Dados populacionais: IBGE, Censos Demográficos 1950–2022.
+
+## Limitações
+
+Os valores analisados correspondem à **liquidação orçamentária**. Ações classificadas como *Supra* (não regionalizáveis) são excluídas da base de cálculo do IDRGP. A taxa de regionalização varia entre anos e ações, sendo apresentada como indicador de qualidade da base na Seção 4.
 
 \newpage
+
+<!-- PÁGINA FINAL -->
+
+\thispagestyle{empty}
+
+\vspace*{\fill}
 
 \begin{center}
-\vspace*{\fill}
-\textbf{Fim do Relatório}\\
-Elaborado por: SEPLAN/SIME/CPMA\\
-Prefeitura de São Paulo, maio de 2026.
-\vspace*{\fill}
+
+\textcolor{pmsp}{\rule{10cm}{1.5pt}}
+
+\vspace{0.8cm}
+
+{\large \textbf{Coordenadoria de Planejamento e Monitoramento de Ações}}\\[0.2cm]
+{\normalsize Secretaria de Inovação e Monitoramento de Entregas (SIME)}\\[0.1cm]
+{\normalsize Secretaria Municipal de Planejamento Urbano (SEPLAN)}\\[0.1cm]
+{\normalsize Prefeitura do Município de São Paulo}
+
+\vspace{0.6cm}
+
+{\small `r format(Sys.Date(), '%B de %Y')` | São Paulo — SP}\\[0.2cm]
+{\small Documento elaborado em ambiente reproduzível (R/RMarkdown).}\\[0.1cm]
+{\small Para informações: \texttt{cpma@seplan.prefeitura.sp.gov.br}}
+
+\vspace{0.8cm}
+
+\textcolor{pmsp}{\rule{10cm}{1.5pt}}
+
 \end{center}
+
+\vspace*{\fill}

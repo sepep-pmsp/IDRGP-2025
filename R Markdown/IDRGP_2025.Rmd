@@ -1,4 +1,4 @@
----
+﻿---
 ---
 title: "Índice de Distribuição Regional do Gasto Público (IDRGP)"
 subtitle: "Análise do Ciclo PPA 2022–2025"
@@ -28,10 +28,68 @@ Este documento consolida a análise do ciclo PPA **2022–2025**, considerando *
 
 **Referência:** <https://prefeitura.sp.gov.br/web/planejamento/w/execucao_orcamentaria>
 
+```{r setup, include=FALSE}
+# ============================================================================
+# SETUP — Protocolo de proteção estrutural (Windows / OneDrive / MAX_PATH)
+# ============================================================================
+# DEVE ser o primeiro chunk do documento. Configura o ambiente ANTES de
+# qualquer library() para evitar erros "nome muito longo?" do Windows.
+# ============================================================================
+
+# --- 1. Pasta temporária curta ------------------------------------------
+# O caminho deste projeto no OneDrive já tem ~80 caracteres.
+# Redirecionar TEMP para C:/Temp/IDRGP (14 chars) garante que qualquer
+# arquivo temporário criado pelo R, knitr, sf ou readxl fique seguro.
+.pasta_temp <- "C:/Temp/IDRGP"
+if (!dir.exists(.pasta_temp)) dir.create(.pasta_temp, recursive = TRUE)
+Sys.setenv(TEMP = .pasta_temp, TMP = .pasta_temp, TMPDIR = .pasta_temp)
+
+# --- 2. knitr: cache e figuras em path curto ----------------------------
+# O knitr, por padrão, cria cache na pasta do .Rmd, gerando paths como:
+#   "...OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown/
+#    IDRGP_2025_cache/html/chunk_nome_com_hash_XXXXXXXX"
+# Esse path facilmente ultrapassa 260 caracteres no Windows.
+# A solução é redirecionar cache e figuras para o path curto.
+knitr::opts_chunk$set(
+  cache      = FALSE,                              # sem cache (path longo)
+  fig.path   = file.path(.pasta_temp, "fig_"),     # figuras em C:/Temp/IDRGP/fig_
+  cache.path = file.path(.pasta_temp, "cache_"),   # cache em C:/Temp/IDRGP/cache_
+  echo       = FALSE,
+  message    = FALSE,
+  warning    = FALSE
+)
+
+# --- 3. Previne salvamento de .RData na pasta do OneDrive ---------------
+# O .RData de 22MB na pasta do projeto é salvo automaticamente pelo RStudio
+# e depois tentado restaurar, gerando o erro "Error saving session".
+# Esta opção não substitui a configuração do projeto, mas reforça a proteção.
+options(
+  save.image.defaults = list(compress = FALSE),
+  scipen     = 999,       # sem notação científica
+  OutDec     = ",",       # decimal brasileiro
+  encoding   = "UTF-8"    # encoding padrão
+)
+
+# --- 4. Remove arquivos .lock zumbis ------------------------------------
+# Locks de sessões anteriores que travaram impedem carregamento de pacotes.
+tryCatch({
+  lks <- list.files(c(.pasta_temp, "."), pattern = "\\.lock$",
+                    full.names = TRUE, recursive = FALSE)
+  if (length(lks) > 0) file.remove(lks)
+}, error = function(e) NULL)
+
+# --- 5. Garante que norm_name() NUNCA seja aplicada em paths -----------
+# Barreira conceitual: funções de normalização de TEXTO são para colunas
+# de dados. A função safe_path() (definida em funções auxiliares) deve
+# ser usada exclusivamente para construção de caminhos de arquivo.
+# (verificação executada em funções auxiliares — ver seção 3)
+```
+
 ## 2. Bibliotecas convocadas 
 Este bloco reúne os pacotes necessários para o funcionamento do modelo analítico. Em termos práticos, ele estrutura três capacidades centrais do estudo: (i) tratamento e organização de grandes bases de dados orçamentários, (ii) integração com dados territoriais (mapas das subprefeituras) e (iii) produção de visualizações e tabelas para apoio à decisão. A presença de bibliotecas específicas para leitura de Excel, manipulação de dados e geoprocessamento garante que o fluxo seja reproduzível e passível de atualização com novas bases.
 
 ```{r bibliotecas, echo=FALSE, message=FALSE, warning=FALSE}
+
 library(tidyverse)   # manipulação e visualização de dados
 library(readxl)      # leitura de arquivos Excel
 library(janitor)     # padronização de nomes de colunas
@@ -53,16 +111,243 @@ Este trecho resolve um problema recorrente na administração pública: a incons
 
 
 ```{r funcao_norm_name, echo=FALSE}
+# ============================================================================
+# norm_name() — Função central de normalização textual do IDRGP
+# ============================================================================
+# Propósito: Gerar uma chave de join estável, comparável e livre de erros para
+#   qualquer coluna de texto usada como identificador territorial (subprefeitura,
+#   district, nome de secretaria, etc.).
+#
+# Previne: erros de encoding UTF-8, bytes inválidos, acentos, caracteres
+#   invisíveis, variações institucionais, falhas em inner_join e str_detect.
+#
+# Dependências: stringi (já carregado em `bibliotecas`).
+# ============================================================================
+
 norm_name <- function(x) {
-  x |>
-    str_to_lower() |>
-    str_squish() |>
-    iconv(from = "", to = "ASCII//TRANSLIT") |>
-    str_replace_all("^subprefeitura de ", "") |>
-    str_replace_all("^subprefeitura ",    "") |>
-    str_replace_all("[^a-z0-9]",          "")
+
+  # 1. Garante que a entrada seja sempre character, mesmo se vier como factor
+  #    ou tipo inesperado (ex.: colunas de shapefile lidas como integer).
+  x <- as.character(x)
+
+  # 2. Força re-encoding para UTF-8, descartando bytes inválidos que causam
+  #    erros do tipo "invalid multibyte string" e "unexpected symbol" no parse.
+  #    O argumento sub = "" remove silenciosamente os bytes não conversíveis.
+  x <- iconv(x, from = "", to = "UTF-8", sub = "")
+
+  # 3. Remove caracteres de controle e espaços "invisíveis" Unicode:
+  #    \u00a0 = non-breaking space  |  \u200b = zero-width space
+  #    \u200e/\u200f = marcadores de direção  |  \ufeff = BOM (byte-order mark)
+  #    Esses caracteres são invisíveis no editor mas quebram comparações de string.
+  x <- gsub("[\u00a0\u200b\u200c\u200d\u200e\u200f\ufeff]", " ", x, perl = TRUE)
+
+  # 4. Remove prefixos institucionais antes de qualquer outra transformação,
+  #    enquanto os acentos ainda estão presentes (mais confiável do que depois).
+  #    Cobre variantes com e sem acento no "Subprefeitura".
+  x <- gsub("^[Ss]ubprefeitura\\s+[Dd][Ee]\\s+", "", x, perl = TRUE)
+  x <- gsub("^[Ss]ubprefeitura\\s+",              "", x, perl = TRUE)
+
+  # 5. Conversão para minúsculas — feita ANTES da transliteração para preservar
+  #    o mapeamento correto de acentos maiúsculos (ex.: É -> e, não -> E -> e).
+  x <- tolower(x)
+
+  # 6. Transliteração robusta via stringi: remove acentos e converte caracteres
+  #    especiais para o equivalente ASCII mais próximo.
+  #    stri_trans_general é mais confiável que iconv("ASCII//TRANSLIT") no Windows
+  #    com locales pt_BR, pois não depende de tabelas do sistema operacional.
+  #    Ex.: ã->a, ç->c, ü->u, ñ->n, ß->ss, ø->o, ł->l
+  x <- stringi::stri_trans_general(x, "Latin-ASCII")
+
+  # 7. Substitui hífens, barras, underscores e pontuação variada por espaço,
+  #    para que "Casa Verde/Cachoeirinha" e "Casa Verde Cachoeirinha" produzam
+  #    a mesma chave. Também elimina pontos, vírgulas e apóstrofos institucionais
+  #    (ex.: "M'Boi Mirim").
+  x <- gsub("[-/_.,;:()'\\'\"&+*]", " ", x, perl = TRUE)
+
+  # 8. Remove qualquer caractere não-ASCII remanescente (falhas de transliteração
+  #    em caracteres exóticos, símbolos matemáticos, emojis acidentais, etc.).
+  x <- gsub("[^[:ascii:]]", "", x, perl = TRUE)
+
+  # 9. Após todas as substituições, reduz múltiplos espaços consecutivos
+  #    (gerados pelos passos 7-8) a um único espaço e remove espaços nas bordas.
+  x <- trimws(gsub("\\s{2,}", " ", x, perl = TRUE))
+
+  # 10. Dicionário de equivalências institucionais.
+  #     Normaliza variações de grafia conhecidas ANTES de remover espaços,
+  #     garantindo que bases distintas (SF, SGM, GeoSampa, SUS, etc.) produzam
+  #     a mesma chave final.
+  equivalencias <- c(
+    # Aricanduva — várias grafias históricas
+    "aricanduva formosa carrao"        = "aricanduvaformosacarrao",
+    "aricanduva carrao formosa"        = "aricanduvaformosacarrao",
+    "aricanduva"                       = "aricanduvaformosacarrao",
+
+    # Casa Verde — barra opcional
+    "casa verde cachoeirinha"          = "casaverdecachoeirinha",
+
+    # Freguesia — após stri_trans_general: ç->c, â->a, ã->a
+    "freguesia brasilandia"            = "freguesiabrasilandia",
+
+    # Jacana/Tremembe — múltiplas grafias
+    "jacana tremembe"                  = "jacanatremembe",
+    "jacana trembe"                    = "jacanatremembe",
+
+    # M'Boi Mirim — apóstrofo removido no passo 7
+    "m boi mirim"                      = "mboimirim",
+    "mboi mirim"                       = "mboimirim",
+
+    # Perus — com ou sem Anhanguera
+    "perus anhanguera"                 = "perusanhanguera",
+    "perus"                            = "perusanhanguera",
+
+    # Pirituba — com ou sem Jaraguá (após transliteração: á->a)
+    "pirituba jaragua"                 = "piritubajaragua",
+
+    # Santana — com ou sem Tucuruvi
+    "santana tucuruvi"                 = "santanatucuruvi",
+
+    # São Miguel — forma abreviada
+    "sao miguel"                       = "saomiguelpaulista",
+
+    # Supra-centro mapeado para Sé
+    "supra centro"                     = "se",
+    "supra subprefeitura centro"       = "se",
+    "centro"                           = "se",
+
+    # Vila Maria — com ou sem Vila Guilherme
+    "vila maria vila guilherme"        = "vilamariavilaguilherme",
+
+    # Itaim — forma abreviada
+    "itaim"                            = "itaimpaulista",
+
+    # Jaboatao — evita mapeamento errado se ocorrer
+    "jabaquara"                        = "jabaquara"
+  )
+
+  # Aplica o dicionário: varre cada equivalência e substitui quando há match exato.
+  # Usa match exato (não regex) para evitar substituições parciais acidentais.
+  for (de in names(equivalencias)) {
+    para <- equivalencias[[de]]
+    x[x == de] <- para
+  }
+
+  # 11. Remove TODOS os espaços restantes para produzir a chave final compacta
+  #     (ex.: "sao paulo" -> "saopaulo").
+  #     Chaves sem espaço são mais seguras em joins e menos suscetíveis a
+  #     diferenças de tokenização entre bases.
+  x <- gsub("\\s+", "", x, perl = TRUE)
+
+  # 12. Converte string vazia para NA explícito, evitando joins "fantasma"
+  #     onde "" se une a "" de outra base de forma silenciosa.
+  x[x == ""] <- NA_character_
+
+  return(x)
 }
+
+# ----------------------------------------------------------------------------
+# norm_col() — Wrapper vetorizado para uso em mutate() do dplyr.
+# Aplica norm_name() a uma coluna inteira de forma segura, com suppressWarnings
+# para silenciar avisos de conversão de encoding em ambientes Windows.
+# ----------------------------------------------------------------------------
+norm_col <- function(col) {
+  suppressWarnings(norm_name(col))
+}
+
+# ============================================================================
+# safe_path() — Função para construção SEGURA de caminhos de arquivo
+# ============================================================================
+# PROPÓSITO: Separar EXPLICITAMENTE a normalização de texto (norm_name) da
+#   manipulação de paths do sistema de arquivos.
+#
+# REGRA DE USO:
+#   norm_name()  -> SOMENTE para colunas de dados (subprefeitura, secretaria...)
+#   safe_path()  -> SOMENTE para construir caminhos de arquivo e diretório
+#
+# NUNCA use norm_name() em argumentos como pasta_saida, arquivo_shp, etc.
+# Isso eliminaria separadores de path ("/", "\\") e quebraria o caminho.
+# ============================================================================
+
+safe_path <- function(..., max_chars = 200) {
+
+  # 1. Constrói o path usando file.path nativo — respeita separadores do SO
+  partes <- list(...)
+
+  # 2. Validação: rejeita silenciosamente qualquer parte que seja NA ou vazia
+  partes_validas <- Filter(function(p) !is.null(p) && !is.na(p) && nchar(p) > 0,
+                           lapply(partes, as.character))
+
+  if (length(partes_validas) == 0) {
+    warning("[safe_path] Todas as partes do path são inválidas. Retornando NA.")
+    return(NA_character_)
+  }
+
+  # 3. Monta o path
+  path_final <- do.call(file.path, partes_validas)
+
+  # 4. Normaliza separadores para o Windows (evita mistura de / e \\)
+  path_final <- normalizePath(path_final, winslash = "/", mustWork = FALSE)
+
+  # 5. PROTEÇÃO MAX_PATH: avisa se o path ultrapassa o limite seguro do Windows
+  #    O limite real é 260, mas reservamos margem para sufixos (.xlsx, .shp, etc.)
+  if (nchar(path_final) > max_chars) {
+    warning(
+      "[safe_path] ATENÇÃO: path com ", nchar(path_final), " caracteres ",
+      "(limite seguro = ", max_chars, ").\n",
+      "  Path: ", path_final, "\n",
+      "  Considere mover a pasta 'dados' ou 'resultados' para um caminho mais curto."
+    )
+  }
+
+  return(path_final)
+}
+
+# ============================================================================
+# Autodiagnóstico — executado UMA VEZ ao carregar as funções auxiliares
+# ============================================================================
+# Testa norm_name() com casos conhecidos para capturar regressões imediatamente,
+# antes que o erro se propague para os joins territoriais.
+# ============================================================================
+local({
+  casos <- c(
+    "Subprefeitura de Jaçanã/Tremembé"   = "jacanatremembe",
+    "Subprefeitura M'Boi Mirim"          = "mboimirim",
+    "FREGUESIA/BRASILÂNDIA"              = "freguesiabrasilandia",
+    "Aricanduva/Formosa/Carrão"          = "aricanduvaformosacarrao",
+    "Casa Verde/Cachoeirinha"            = "casaverdecachoeirinha",
+    "Pirituba/Jaraguá"                   = "piritubajaragua",
+    "Santana/Tucuruvi"                   = "santanatucuruvi",
+    "Perus/Anhanguera"                   = "perusanhanguera",
+    "São Miguel"                         = "saomiguelpaulista",
+    "Itaim"                              = "itaimpaulista",
+    "Supra Centro"                       = "se",
+    "Vila Maria/Vila Guilherme"          = "vilamariavilaguilherme"
+  )
+
+  resultados <- suppressWarnings(norm_name(names(casos)))
+  esperados  <- unname(casos)
+  falhos     <- which(resultados != esperados)
+
+  if (length(falhos) == 0) {
+    cat("✅ norm_name(): todos os", length(casos),
+        "casos de teste passaram.\n")
+  } else {
+    for (i in falhos) {
+      warning(
+        "[norm_name autodiagnóstico] FALHA no caso '", names(casos)[i], "':\n",
+        "  Esperado : '", esperados[i], "'\n",
+        "  Obtido   : '", resultados[i], "'\n"
+      )
+    }
+  }
+
+  # Testa também que safe_path NÃO remove separadores de diretório
+  p <- safe_path("resultados", "teste.xlsx")
+  if (!grepl("resultados", p)) {
+    warning("[safe_path autodiagnóstico] safe_path() removeu componentes do path!")
+  }
+})
 ```
+
 
 ## 4. Tabela de referência das subprefeituras
 
@@ -1927,454 +2212,267 @@ cat("✅ Mapas exportados em:", pasta_mapas_individuais, "\n")
 ```
 
 
-### 20.8 - Exportação das informações por funções de gastos
+### 20.8 — Leitura e agregação por função orçamentária
 
-```{r tabela_grafico_acoes_regionalizadas, echo=FALSE, message=FALSE, warning=FALSE}
-# 1) Verificação dos arquivos de origem
-arquivos_fn <- c(arquivo_2022, arquivo_2023, arquivo_2024, arquivo_2025)
-arquivos_faltando <- arquivos_fn[is.na(arquivos_fn) | !file.exists(arquivos_fn)]
-if (length(arquivos_faltando) > 0) {
-  stop("Um ou mais arquivos de origem para funções não foram encontrados:\n",
-       paste(basename(arquivos_faltando), collapse = "\n"))
-}
-
-limpar_nomes_colunas <- function(x) {
-  x <- as.character(x)
-  x <- iconv(x, from = "", to = "ASCII//TRANSLIT")
-  x <- stringr::str_replace_all(x, "[[:cntrl:]]+", " ")
-  x <- stringr::str_replace_all(x, "[[:space:]]+", " ")
-  x <- stringr::str_to_lower(x)
-  x <- trimws(x)
-  x
-}
-
-identificar_coluna <- function(nm, nm_norm, padrao) {
-  idx <- grep(padrao, nm_norm)
-  if (length(idx) == 0) return(NA_character_)
-  nm[idx[1]]
-}
-
-ler_excel_funcao <- function(arq, ano_val, sheet = NULL) {
-  cat("=== Diagnóstico do Excel ===\n")
-  cat("Arquivo:", arq, "\n")
-
-  sheets <- readxl::excel_sheets(arq)
-  cat("Planilhas disponíveis:", paste(sheets, collapse = " | "), "\n")
-
-  if (is.null(sheet)) {
-    sheet <- sheets[1]
-    cat("Usando sheet padrão:", sheet, "\n")
-  } else {
-    if (!sheet %in% sheets) {
-      stop("Sheet especificado não encontrado em ", basename(arq), ": ", sheet)
-    }
-    cat("Usando sheet definido:", sheet, "\n")
-  }
-
-  df <- readxl::read_xlsx(arq, sheet = sheet)
-  nm <- names(df)
-  nm_norm <- limpar_nomes_colunas(nm)
-
-  cat("Nomes originais das colunas:\n")
-  print(nm)
-  cat("Nomes normalizados das colunas:\n")
-  print(nm_norm)
-
-  col_sub <- identificar_coluna(nm, nm_norm, "subpref")
-  col_vlr <- identificar_coluna(nm, nm_norm, "valor|vlr")
-  col_fun <- identificar_coluna(nm, nm_norm, "funcao|descricao|descr")
-  col_sig <- identificar_coluna(nm, nm_norm, "sigla.*org|org.*sigla|sigla|orgao|org")
-
-  cat("Coluna subprefeitura detectada:", col_sub, "\n")
-  cat("Coluna valor detectada:", col_vlr, "\n")
-  cat("Coluna função detectada:", col_fun, "\n")
-  cat("Coluna sigla_orgao detectada:", col_sig, "\n")
-  cat("Linhas lidas:", nrow(df), "\n")
-
-  if (is.na(col_sub) || is.na(col_vlr) || is.na(col_fun)) {
-    stop("Não foi possível identificar as colunas de subprefeitura/valor/função em ", basename(arq),
-         "\nColunas originais: ", paste(nm, collapse = ", "),
-         "\nColunas normalizadas: ", paste(nm_norm, collapse = ", "))
-  }
-
-  cat("Valores iniciais da coluna de subprefeitura:\n")
-  print(head(df[[col_sub]], 20))
-  cat("Contagem de NA/blank em subprefeitura:", sum(is.na(df[[col_sub]]) | trimws(as.character(df[[col_sub]])) == ""), "\n")
-
-  if (sum(!is.na(df[[col_sub]]) & trimws(as.character(df[[col_sub]])) != "") == 0) {
-    cat("A coluna de subprefeitura detectada está vazia em todas as linhas. Tentando fallback com primeira linha como header...\n")
-    df_alt <- readxl::read_xlsx(arq, sheet = sheet, col_names = FALSE)
-    df_alt <- janitor::row_to_names(df_alt, row_number = 1)
-    nm <- names(df_alt)
-    nm_norm <- limpar_nomes_colunas(nm)
-
-    col_sub <- identificar_coluna(nm, nm_norm, "subpref")
-    col_vlr <- identificar_coluna(nm, nm_norm, "valor|vlr")
-    col_fun <- identificar_coluna(nm, nm_norm, "funcao|descricao|descr")
-    col_sig <- identificar_coluna(nm, nm_norm, "sigla.*org|org.*sigla|sigla|orgao|org")
-
-    cat("Fallback coluna subprefeitura detectada:", col_sub, "\n")
-    cat("Fallback coluna valor detectada:", col_vlr, "\n")
-    cat("Fallback coluna função detectada:", col_fun, "\n")
-    cat("Fallback coluna sigla_orgao detectada:", col_sig, "\n")
-
-    if (is.na(col_sub) || is.na(col_vlr) || is.na(col_fun)) {
-      stop("Fallback também não identificou as colunas de subprefeitura/valor/função em ", basename(arq),
-           "\nColunas originais fallback: ", paste(nm, collapse = ", "),
-           "\nColunas normalizadas fallback: ", paste(nm_norm, collapse = ", "))
-    }
-
-    cat("Valores iniciais da coluna de subprefeitura após fallback:\n")
-    print(head(df_alt[[col_sub]], 20))
-    cat("Contagem de NA/blank em subprefeitura após fallback:", sum(is.na(df_alt[[col_sub]]) | trimws(as.character(df_alt[[col_sub]])) == ""), "\n")
-
-    df <- df_alt
-  }
-
-  val_fun <- as.character(df[[col_fun]])
-  val_fun[is.na(val_fun) | nchar(trimws(val_fun)) == 0] <- "Nao classificada"
-
-  sigla_orgao <- if (!is.na(col_sig)) {
-    sig <- as.character(df[[col_sig]])
-    sig[is.na(sig)] <- ""
-    sig <- stringr::str_squish(sig)
-    sig <- toupper(sig)
-    sig <- gsub("[^A-Z0-9]", "", sig)
-    sig <- ifelse(sig == "", NA_character_, sig)
-    sig
-  } else {
-    rep(NA_character_, nrow(df))
-  }
-
-  tibble::tibble(
-    subprefeitura_orig      = as.character(df[[col_sub]]),
-    descricao_funcao        = stringr::str_squish(val_fun),
-    sigla_orgao             = sigla_orgao,
-    valor_detalhamento_acao = suppressWarnings(as.numeric(df[[col_vlr]])),
-    ano                     = as.integer(ano_val)
-  )
-}
-
-# 2) Leitura e concatenação de todos os anos
-
-df_base_fn <- dplyr::bind_rows(
-  ler_excel_funcao(arquivo_2022, 2022),
-  ler_excel_funcao(arquivo_2023, 2023),
-  ler_excel_funcao(arquivo_2024, 2024),
-  ler_excel_funcao(arquivo_2025, 2025)
+```{r funcao_treemap_dados, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# PALETA INSTITUCIONAL — funções orçamentárias (fixa para todo o projeto)
+# ============================================================================
+PAL_FUNCAO <- c(
+  "Legislativa"            = "#1F77B4",
+  "Judiciária"             = "#FF7F0E",
+  "Essencial à Justiça"    = "#2CA02C",
+  "Administração"          = "#D62728",
+  "Defesa Nacional"        = "#9467BD",
+  "Segurança Pública"      = "#8C564B",
+  "Relações Exteriores"    = "#E377C2",
+  "Assistência Social"     = "#7F7F7F",
+  "Previdência Social"     = "#BCBD22",
+  "Saúde"                  = "#17BECF",
+  "Trabalho"               = "#393B79",
+  "Educação"               = "#6B6ECF",
+  "Cultura"                = "#9C9EDE",
+  "Direitos da Cidadania"  = "#DB8E5E",
+  "Urbanismo"              = "#AD494A",
+  "Habitação"              = "#A55194",
+  "Saneamento"             = "#6B6E00",
+  "Gestão Ambiental"       = "#B5CF6B",
+  "Ciência e Tecnologia"   = "#8C6D31",
+  "Agricultura"            = "#CEDB9C",
+  "Organização Agrária"    = "#E7BA52",
+  "Indústria"              = "#E7969C",
+  "Comércio e Serviços"    = "#F7B6D2",
+  "Comunicações"           = "#C49C94",
+  "Energia"                = "#2B8CBE",
+  "Transporte"             = "#FF9F1C",
+  "Desporto e Lazer"       = "#2ECC71",
+  "Encargos Especiais"     = "#7D3C98",
+  "Reserva de Contingência"= "#34495E"
 )
 
-# 3) Normalização robusta de nomes de subprefeitura
-enh_normaliza_subpref <- function(x) {
-  x <- as.character(x)
-  x <- iconv(x, from = "", to = "ASCII//TRANSLIT")
-  x <- stringr::str_to_lower(x)
-  
-  # Remover prefixos típicos do Excel
-  x <- stringr::str_replace_all(x, "^subprefeitura\\s+de\\s+", "")
-  x <- stringr::str_replace_all(x, "^subprefeitura\\s+", "")
-  x <- stringr::str_replace_all(x, "^supra\\s+subprefeitura\\s+", "")
-  x <- stringr::str_replace_all(x, "^supra\\s+", "")
-  
-  # Remover pontuação e caracteres de controle
-  x <- stringr::str_replace_all(x, "[[:punct:][:cntrl:]]+", " ")
-  x <- stringr::str_replace_all(x, "[[:space:]]+", " ")
-  x <- trimws(x)
-  x
-}
+# ============================================================================
+# LEITURA — uma linha por ano, usando colunas padronizadas pelo clean_names()
+# Colunas esperadas após clean_names():
+#   subprefeitura | descricao_funcao (ou similar) | valor_detalhamento_acao
+# ============================================================================
+ler_ano_funcao <- function(arquivo, ano) {
+  df <- readxl::read_excel(arquivo) |>
+    janitor::clean_names()
 
-df_siglas_fn <- df_siglas |>
-  dplyr::mutate(subprefeitura_key = enh_normaliza_subpref(subprefeitura))
+  # Identifica coluna de função (DESCRIÇÃO_FUNÇÃO ou variante)
+  col_fun <- intersect(
+    names(df),
+    c("descricao_funcao", "descricao_da_funcao", "funcao",
+      "descricao_funcao_2", "descr_funcao", "funcao_orcamentaria")
+  )[1]
 
-# 4) Construção das chaves de correspondência e depuração
+  # Identifica coluna de valor
+  col_val <- intersect(
+    names(df),
+    c("valor_detalhamento_acao", "valor_detalhamento_a_cao",
+      "valor", "valor_liquidado", "valor_empenhado")
+  )[1]
 
-df_base_fn <- df_base_fn |>
-  dplyr::mutate(subprefeitura_key = enh_normaliza_subpref(subprefeitura_orig)) |>
-  # Filtrar fora agregações administrativas (supra)
-  dplyr::filter(!is.na(subprefeitura_key), subprefeitura_key != "", !grepl("^supra", subprefeitura_key))
-
-cat("Linhas lidas após normalização de subprefeitura:", nrow(df_base_fn), "\n")
-cat("Chaves únicas detectadas:\n")
-print(sort(unique(df_base_fn$subprefeitura_key)))
-
-# manter left_join para depuração
-
-df_base_fn <- df_base_fn |>
-  dplyr::left_join(
-    df_siglas_fn |> dplyr::select(subprefeitura_key, subprefeitura),
-    by = "subprefeitura_key"
-  )
-
-linhas_sem_match <- df_base_fn |>
-  dplyr::filter(is.na(subprefeitura))
-
-cat("Linhas sem correspondência de subprefeitura:", nrow(linhas_sem_match), "\n")
-if (nrow(linhas_sem_match) > 0) {
-  cat("Chaves que não encontram correspondência:\n")
-  print(sort(unique(linhas_sem_match$subprefeitura_key)))
-  cat("setdiff entre chaves lidas e chaves válidas:\n")
-  print(setdiff(unique(df_base_fn$subprefeitura_key), unique(df_siglas_fn$subprefeitura_key)))
-}
-
-# 5) Se não houver correspondência, tentar fuzzy matching
-
-if (nrow(linhas_sem_match) == nrow(df_base_fn)) {
-  cat("\n⚠️  DIAGNÓSTICO DETALHADO: Nenhuma correspondência exata encontrada.\n\n")
-
-  cat("Valores BRUTOS do Excel (subprefeitura_orig):\n")
-  print(sort(unique(df_base_fn$subprefeitura_orig)))
-
-  cat("\nValores NORMALIZADOS do Excel (subprefeitura_key):\n")
-  print(sort(unique(df_base_fn$subprefeitura_key)))
-
-  cat("\nValores do df_siglas NORMALIZADOS (subprefeitura_key):\n")
-  print(sort(unique(df_siglas_fn$subprefeitura_key)))
-
-  cat("\nTentando correspondência FUZZY (aproximada) usando agrep...\n")
-
-  # Criar um mapa fuzzy de correspondências usando agrep (R base)
-  chaves_lidas <- sort(unique(df_base_fn$subprefeitura_key))
-  chaves_validas <- sort(unique(df_siglas_fn$subprefeitura_key))
-
-  mapa_fuzzy <- data.frame(chave_lida = chaves_lidas, chave_valida = NA_character_)
-
-  for (i in seq_along(chaves_lidas)) {
-    cl <- chaves_lidas[i]
-    # agrep com max.distance = 2 caracteres (ou 10% da string, o que for maior)
-    matches <- agrep(cl, chaves_validas, max.distance = list(insertions = 2, deletions = 2, substitutions = 1), ignore.case = TRUE)
-
-    if (length(matches) > 0) {
-      # Encontrar o match mais similar (o primeiro retornado por agrep é geralmente o melhor)
-      mapa_fuzzy$chave_valida[i] <- chaves_validas[matches[1]]
-      cat("Fuzzy match:", cl, "→", chaves_validas[matches[1]], "\n")
-    } else {
-      cat("Sem fuzzy match para:", cl, "\n")
-    }
+  if (is.na(col_fun) || is.na(col_val)) {
+    warning("[20.8] Colunas não detectadas em ano ", ano,
+            ". Colunas disponíveis: ", paste(names(df), collapse = ", "))
+    return(NULL)
   }
 
-  # Tentar aplicar o mapa fuzzy
-  df_base_fn <- df_base_fn |>
-    dplyr::left_join(
-      mapa_fuzzy |> dplyr::rename(subprefeitura_key = chave_lida, subprefeitura_key_fuzzy = chave_valida),
-      by = "subprefeitura_key"
-    )
-
-  # Tentar join com a chave fuzzy
-  df_base_fn <- df_base_fn |>
-    dplyr::left_join(
-      df_siglas_fn |> dplyr::select(subprefeitura_key, subprefeitura) |> dplyr::rename(subprefeitura_key_fuzzy = subprefeitura_key),
-      by = "subprefeitura_key_fuzzy"
-    )
-
-  # Se fuzzy funcionou, substituir subprefeitura_key por subprefeitura_key_fuzzy
-  df_base_fn <- df_base_fn |>
-    dplyr::mutate(
-      subprefeitura_key = dplyr::coalesce(subprefeitura_key_fuzzy, subprefeitura_key)
+  df |>
+    dplyr::transmute(
+      subprefeitura  = as.character(subprefeitura),
+      funcao         = stringr::str_squish(as.character(.data[[col_fun]])),
+      valor          = suppressWarnings(as.numeric(.data[[col_val]])),
+      ano            = as.integer(ano)
     ) |>
-    dplyr::select(-subprefeitura_key_fuzzy)
-
-  linhas_sem_match <- df_base_fn |>
-    dplyr::filter(is.na(subprefeitura))
-
-  cat("\nApós fuzzy matching, linhas sem correspondência:", nrow(linhas_sem_match), "\n")
+    # Mantém apenas subprefeituras reconhecidas (sem Supra) e funções da lista
+    dplyr::filter(
+      !is.na(subprefeitura),
+      !stringr::str_detect(tolower(subprefeitura), "^supra"),
+      funcao %in% names(PAL_FUNCAO),
+      !is.na(valor), valor > 0
+    )
 }
 
-# 6) Filtrar apenas correspondências válidas antes de gerar o gráfico
-
-df_base_fn <- df_base_fn |>
-  dplyr::filter(!is.na(subprefeitura))
-
-if (nrow(df_base_fn) == 0) {
-  stop("O dataframe final ficou vazio após a correspondência de subprefeituras. Verifique as chaves de subprefeitura e as mensagens de diagnóstico acima.")
-}
-
-cat("Linhas restantes após correspondência:", nrow(df_base_fn), "\n")
-cat("Subprefeituras únicas após correspondência:", dplyr::n_distinct(df_base_fn$subprefeitura), "\n")
-
-sigla_descricao_funcao <- function(x) {
-  x <- stringr::str_squish(as.character(x))
-  vapply(x, function(item) {
-    if (item == "") return("")
-    words <- unlist(stringr::str_split(item, "\\s+"))
-    stopwords <- c("de","da","do","das","dos","e","em","na","no","nas","nos",
-                   "para","com","por","ao","aos","se","o","a","os","as")
-    words <- words[!tolower(words) %in% stopwords]
-    if (length(words) == 0) words <- unlist(stringr::str_split(item, "\\s+"))
-    sigla <- paste0(toupper(stringr::str_sub(words, 1, 1)), collapse = "")
-    sigla <- gsub("[^A-Z0-9]", "", sigla)
-    if (nchar(sigla) < 3) {
-      sigla <- toupper(gsub("[^A-Z0-9]", "", stringr::str_sub(item, 1, 3)))
-    }
-    if (nchar(sigla) > 6) sigla <- stringr::str_sub(sigla, 1, 6)
-    sigla
-  }, FUN.VALUE = character(1), USE.NAMES = FALSE)
-}
-
-# 7) Agregação quadriênal por subprefeitura + função
-funcoes_desejadas <- c(
-  "Legislativa",
-  "Judiciária",
-  "Essencial à Justiça",
-  "Administração",
-  "Defesa Nacional",
-  "Segurança Pública",
-  "Relações Exteriores",
-  "Assistência Social",
-  "Previdência Social",
-  "Saúde",
-  "Trabalho",
-  "Educação",
-  "Cultura",
-  "Direitos da Cidadania",
-  "Urbanismo",
-  "Habitação",
-  "Saneamento",
-  "Gestão Ambiental",
-  "Ciência e Tecnologia",
-  "Agricultura",
-  "Organização Agrária",
-  "Indústria",
-  "Comércio e Serviços",
-  "Comunicações",
-  "Energia",
-  "Transporte",
-  "Desporto e Lazer",
-  "Encargos Especiais",
-  "Reserva de Contingência"
+# Lê os 4 anos e consolida
+df_fn <- purrr::map2_dfr(
+  list(arquivo_2022, arquivo_2023, arquivo_2024, arquivo_2025),
+  2022:2025,
+  ler_ano_funcao
 )
 
-df_agg_fn <- df_base_fn |>
-  dplyr::filter(!is.na(descricao_funcao), nchar(trimws(descricao_funcao)) > 0) |>
-  dplyr::mutate(descricao_funcao = stringr::str_squish(descricao_funcao)) |>
-  dplyr::filter(descricao_funcao %in% funcoes_desejadas) |>
-  dplyr::group_by(subprefeitura, descricao_funcao) |>
-  dplyr::summarise(valor_executado = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") |>
-  dplyr::mutate(label_display = descricao_funcao)
+# Join com df_siglas usando norm_name() — chave já normalizada no projeto
+df_fn <- df_fn |>
+  dplyr::mutate(join_key = norm_name(subprefeitura)) |>
+  dplyr::inner_join(
+    df_siglas |> dplyr::mutate(join_key = norm_name(subprefeitura)),
+    by = "join_key",
+    suffix = c("_raw", "")
+  ) |>
+  dplyr::select(subprefeitura, sigla, funcao, valor, ano)
 
-cat("Funções distintas após agregação:", dplyr::n_distinct(df_agg_fn$descricao_funcao), "\n")
+# Agrega: ciclo completo 2022–2025, por subprefeitura + função
+df_tm <- df_fn |>
+  dplyr::group_by(subprefeitura, sigla, funcao) |>
+  dplyr::summarise(valor_total = sum(valor, na.rm = TRUE), .groups = "drop")
+
+cat("✅ Dados para treemaps prontos:",
+    dplyr::n_distinct(df_tm$subprefeitura), "subprefeituras,",
+    dplyr::n_distinct(df_tm$funcao), "funções.\n")
 ```
 
-## 20.9 - exportação dos gráficos e qualificação das informações de visualização
+### 20.9 — Geração e exportação dos treemaps por subprefeitura
 
-```{r tabela_grafico_acoes_regionalizadas_graficos, echo=FALSE, message=FALSE, warning=FALSE}
+```{r funcao_treemap_graficos, echo=FALSE, message=FALSE, warning=FALSE}
+if (!requireNamespace("treemapify", quietly = TRUE))
+  stop("Instale o pacote treemapify: install.packages('treemapify')")
 
-# 7) Paleta para funções
-manual_palette_fn <- c(
-  "Legislativa" = "#1F77B4",
-  "Judiciária" = "#FF7F0E",
-  "Essencial à Justiça" = "#2CA02C",
-  "Administração" = "#D62728",
-  "Defesa Nacional" = "#9467BD",
-  "Segurança Pública" = "#8C564B",
-  "Relações Exteriores" = "#E377C2",
-  "Assistência Social" = "#7F7F7F",
-  "Previdência Social" = "#BCBD22",
-  "Saúde" = "#17BECF",
-  "Trabalho" = "#393B79",
-  "Educação" = "#6B6ECF",
-  "Cultura" = "#9C9EDE",
-  "Direitos da Cidadania" = "#DB8E5E",
-  "Urbanismo" = "#AD494A",
-  "Habitação" = "#A55194",
-  "Saneamento" = "#6B6E00",
-  "Gestão Ambiental" = "#B5CF6B",
-  "Ciência e Tecnologia" = "#8C6D31",
-  "Agricultura" = "#CEDB9C",
-  "Organização Agrária" = "#E7BA52",
-  "Indústria" = "#E7969C",
-  "Comércio e Serviços" = "#F7B6D2",
-  "Comunicações" = "#C49C94",
-  "Energia" = "#2B8CBE",
-  "Transporte" = "#FF9F1C",
-  "Desporto e Lazer" = "#2ECC71",
-  "Encargos Especiais" = "#7D3C98",
-  "Reserva de Contingência" = "#34495E"
+# Pasta de saída
+pasta_tm <- file.path(pasta_saida, "graficos_funcao_subprefeitura")
+if (!dir.exists(pasta_tm)) dir.create(pasta_tm, recursive = TRUE)
+
+# ============================================================================
+# LEGENDA GLOBAL — construída uma vez, fora do loop
+# Minimalista, lateral, visual sóbrio/metálico
+# ============================================================================
+funcoes_presentes <- sort(unique(df_tm$funcao))
+pal_ativa         <- PAL_FUNCAO[funcoes_presentes]
+
+legenda_df <- tibble::tibble(
+  funcao = names(pal_ativa),
+  cor    = unname(pal_ativa),
+  x      = 1, y = seq_along(pal_ativa)
 )
 
-fns_prin <- sort(unique(df_agg_fn$descricao_funcao))
-missing_fns <- setdiff(fns_prin, names(manual_palette_fn))
-additional_colors <- if (length(missing_fns) > 0) {
-  setNames(grDevices::hcl.colors(length(missing_fns), palette = "Dynamic"), missing_fns)
-} else {
-  character()
-}
-
-pal_fn <- c(manual_palette_fn, additional_colors)[fns_prin]
-
-# 8) Pasta de saída dos gráficos
-pasta_gf <- file.path(pasta_saida, "graficos_funcao_subprefeitura")
-if (!dir.exists(pasta_gf)) dir.create(pasta_gf, recursive = TRUE)
-
-lista_sps_fn <- sort(unique(df_siglas$subprefeitura))
-cat("\nGerando", length(lista_sps_fn), "gráficos (treemap) de função por subprefeitura...\n")
-
-for (i in seq_along(lista_sps_fn)) {
-  sp_nm <- lista_sps_fn[i]
-  sp_sg <- df_siglas$sigla[df_siglas$subprefeitura == sp_nm][1]
-  if (is.na(sp_sg)) sp_sg <- ""
-
-  df_sp_fn <- df_agg_fn |> dplyr::filter(subprefeitura == sp_nm)
-  if (nrow(df_sp_fn) == 0) {
-    warning("Sem dados para: ", sp_nm)
-    next
-  }
-
-  # Preparar dados para treemap: ordenar por valor decrescente e limpar labels
-  df_sp_fn <- df_sp_fn |>
-    dplyr::arrange(desc(valor_executado))
-
-  g_fn <- ggplot2::ggplot(
-    df_sp_fn,
-    ggplot2::aes(area = valor_executado, fill = descricao_funcao, label = label_display)
+p_legenda <- ggplot2::ggplot(legenda_df,
+    ggplot2::aes(x = x, y = y, fill = funcao)) +
+  ggplot2::geom_tile(width = 0.6, height = 0.8, color = "white", linewidth = 0.3) +
+  ggplot2::geom_text(
+    ggplot2::aes(label = funcao),
+    x = 1.4, hjust = 0, size = 2.5, color = "#333333", family = "sans"
   ) +
-    treemapify::geom_treemap(color = "white", size = 0.5, show.legend = TRUE) +
+  ggplot2::scale_fill_manual(values = pal_ativa, guide = "none") +
+  ggplot2::scale_y_continuous(expand = c(0.02, 0)) +
+  ggplot2::xlim(0.6, 5) +
+  ggplot2::theme_void() +
+  ggplot2::theme(plot.margin = ggplot2::margin(4, 4, 4, 4))
+
+# ============================================================================
+# FUNÇÃO: gera 1 treemap limpo por subprefeitura
+# ============================================================================
+gerar_treemap <- function(sp_nome, sp_sigla, dados) {
+
+  # Garante que funções com valor zero não entrem
+  dados <- dados |> dplyr::filter(valor_total > 0) |>
+    dplyr::arrange(dplyr::desc(valor_total))
+
+  if (nrow(dados) == 0) return(NULL)
+
+  # Label: nome completo se tile grande, sigla se pequena
+  total_sp <- sum(dados$valor_total)
+  dados <- dados |>
+    dplyr::mutate(
+      pct    = valor_total / total_sp,
+      # Exibe nome completo apenas se tile >= 5% do total
+      label  = dplyr::if_else(pct >= 0.05, funcao, "")
+    )
+
+  ggplot2::ggplot(dados,
+    ggplot2::aes(
+      area  = valor_total,
+      fill  = funcao,
+      label = label
+    )
+  ) +
+    treemapify::geom_treemap(
+      color     = "white",
+      linewidth = 0.8,
+      show.legend = FALSE
+    ) +
     treemapify::geom_treemap_text(
-      fontface = "bold",
-      color = "white",
-      place = "centre",
-      size = 8,
-      grow = FALSE
+      colour    = "white",
+      place     = "centre",
+      size      = 7,
+      fontface  = "bold",
+      grow      = FALSE,
+      reflow    = TRUE,
+      min.size  = 3
     ) +
     ggplot2::scale_fill_manual(
-      values = pal_fn,
-      na.value = "gray70",
-      guide = ggplot2::guide_legend(
-        title = "Função",
-        title.position = "top",
-        label.theme = ggplot2::element_text(size = 7),
-        keywidth = ggplot2::unit(1.2, "lines"),
-        keyheight = ggplot2::unit(0.8, "lines"),
-        ncol = 1
-      )
+      values   = PAL_FUNCAO,
+      na.value = "#AAAAAA",
+      guide    = "none"         # legenda separada (p_legenda)
     ) +
     ggplot2::labs(
-      title = paste0("Funções de Gasto — Subprefeitura ", sp_nm, " (", sp_sg, ")"),
-      subtitle = "Ciclo 2022–2025 | Tamanho proporcional ao valor executado"
+      title    = paste0(sp_nome, "  (", sp_sigla, ")"),
+      subtitle = "Distribuição por função orçamentária — Ciclo 2022–2025"
     ) +
-    ggplot2::theme_minimal(base_size = 10) +
+    ggplot2::theme_void(base_size = 9) +
     ggplot2::theme(
-      text               = ggplot2::element_text(family = "sans"),
-      plot.title         = ggplot2::element_text(face = "bold", size = 11, hjust = 0),
-      plot.subtitle      = ggplot2::element_text(size = 8, color = "gray60"),
-      legend.position    = "right",
-      legend.title       = ggplot2::element_text(size = 8, face = "bold"),
-      legend.text        = ggplot2::element_text(size = 7),
-      legend.key         = ggplot2::element_rect(fill = "white", color = NA),
-      plot.margin        = ggplot2::margin(8, 8, 8, 8),
-      panel.grid         = ggplot2::element_blank(),
-      axis.text          = ggplot2::element_blank(),
-      axis.title         = ggplot2::element_blank()
+      text         = ggplot2::element_text(family = "sans"),
+      plot.title   = ggplot2::element_text(
+        size = 10, face = "bold", hjust = 0,
+        color = "#1a1a2e", margin = ggplot2::margin(b = 2)
+      ),
+      plot.subtitle = ggplot2::element_text(
+        size = 7, color = "#666666", hjust = 0,
+        margin = ggplot2::margin(b = 4)
+      ),
+      plot.margin  = ggplot2::margin(6, 6, 6, 6),
+      plot.background = ggplot2::element_rect(fill = "white", color = NA)
     )
-
-  arq_fn <- paste0("grafico_funcao_", janitor::make_clean_names(sp_nm), ".png")
-  ggplot2::ggsave(file.path(pasta_gf, arq_fn), g_fn,
-                  width = 12, height = 10, units = "cm", dpi = 300)
 }
 
-cat("\n✅", length(lista_sps_fn), "treemaps exportados em:", pasta_gf, "\n")
-```
-```
+# ============================================================================
+# LOOP: gera e exporta os 32 treemaps
+# Cada PNG = treemap (esquerda 75%) + legenda compacta (direita 25%)
+# ============================================================================
+sps <- df_siglas |> dplyr::arrange(subprefeitura)
+cat("Gerando", nrow(sps), "treemaps...\n")
 
+for (i in seq_len(nrow(sps))) {
+  sp_nm <- sps$subprefeitura[i]
+  sp_sg <- sps$sigla[i]
+
+  dados_sp <- df_tm |> dplyr::filter(subprefeitura == sp_nm)
+  if (nrow(dados_sp) == 0) {
+    warning("Sem dados para: ", sp_nm); next
+  }
+
+  p_tm <- gerar_treemap(sp_nm, sp_sg, dados_sp)
+  if (is.null(p_tm)) next
+
+  # Combina treemap + legenda lateral com patchwork
+  p_final <- patchwork::wrap_plots(
+    p_tm,
+    p_legenda,
+    widths = c(3, 1)          # 75% treemap | 25% legenda
+  ) +
+    patchwork::plot_annotation(
+      caption = "Elaboração: CPMA/SIME/SEPLAN/PMSP | Fonte: SF-PMSP",
+      theme   = ggplot2::theme(
+        plot.caption = ggplot2::element_text(
+          size = 6, color = "#888888", hjust = 1,
+          margin = ggplot2::margin(t = 4)
+        )
+      )
+    )
+
+  arq_out <- file.path(pasta_tm,
+    paste0("treemap_funcao_", janitor::make_clean_names(sp_nm), ".png"))
+
+  ggplot2::ggsave(
+    filename = arq_out,
+    plot     = p_final,
+    width    = 16, height = 5,   # 16x5cm — padrão executivo do projeto
+    units    = "cm",
+    dpi      = 300
+  )
+}
+
+cat("✅", nrow(sps), "treemaps exportados em:", pasta_tm, "\n")
+```
 
 
 ## 21. Conclusão automatizada
