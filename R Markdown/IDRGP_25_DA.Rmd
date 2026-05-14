@@ -1,0 +1,2538 @@
+---
+title: "IDRGP — Índice de Distribuição Regional do Gasto Público"
+subtitle: "Análise do Ciclo PPA 2022—2025"
+author: "SEPLAN/CPMA — Prefeitura de São Paulo"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: show
+    highlight: tango
+    number_sections: true
+---
+
+# Introdução
+
+O **IDRGP** (Índice de Distribuição Regional do Gasto Público) mede se a distribuição territorial dos gastos públicos municipais está alinhada às prioridades sociais e de infraestrutura de cada subprefeitura. Esse monitoramento se dá a partir da diferença entre os dados da Execução Regionalizada do Orçamento e da Alocação Orçamentária Esperada, expressa a partir do **Índice de Vulnerabilidade Urbana (IVU - 2025)** atualizado por SEPLAN/CPMA.
+
+Este documento consolida a análise do ciclo PPA **2022—2025**, considerando **todo o universo** de projetos/atividades e funções, sem seleção.
+
+**Fontes de dados:**
+
+- Dados regionalizados da execução orçamentária — Secretaria Municipal de Planejamento e Eficiência
+- AOE ou IDRGP Alvo — SGM/SEPLAN/CPMA (IVU - 2025)
+- Dados cartográficos — GeoSampa (Subprefeituras de São Paulo)
+
+**Referência:** <https://prefeitura.sp.gov.br/web/planejamento/w/execucao_orcamentaria>
+
+## Bibliotecas
+
+```{r bibliotecas, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(janitor)
+library(scales)
+library(writexl)
+library(sf)
+library(ggplot2)
+```
+
+## Funções auxiliares
+
+A função `norm_name()` cria uma chave de integração entre as diversas bases de dados. Remove acentos, converte para minúsculas e elimina caracteres nao alfabéticos, garantindo que nomes escritos de formas ligeiramente diferentes sejam reconhecidos como iguais.
+
+```{r funcao_norm_name}
+norm_name <- function(x) {
+  x |>
+    str_to_lower() |>
+    str_squish() |>
+    str_replace_all("[áàâãä]", "a") |>
+    str_replace_all("[éèêë]",  "e") |>
+    str_replace_all("[íìîï]",  "i") |>
+    str_replace_all("[óòôõö]", "o") |>
+    str_replace_all("[úùûü]",  "u") |>
+    str_replace_all("ç",       "c") |>
+    str_replace_all("^subprefeitura de ", "") |>
+    str_replace_all("^subprefeitura ",    "") |>
+    str_replace_all("[^a-z0-9]",          "")
+}
+```
+
+## Tabela de referencia das subprefeituras
+
+Tabela oficial de correspondência **sigla â†’ nome** das 32 subprefeituras. Usada para padronizar nomes vindos de diferentes fontes (shapefile, orÃ§amento, IVU).
+
+```{r df_siglas}
+df_siglas <- tibble(
+  sigla = c("AF","BT","CL","CS","CV","AD","CT","EM","FO","GU",
+            "IP","IT","IQ","JA","JT","LA","MB","MO","PA","PE",
+            "PR","PI","PJ","ST","SA","SM","MP","SB","SE","MG","VM","VP"),
+  subprefeitura = c(
+    "Aricanduva/Formosa/CarrÃ£o", "ButantÃ£",               "Campo Limpo",
+    "Capela do Socorro",          "Casa Verde/Cachoeirinha","Cidade Ademar",
+    "Cidade Tiradentes",          "Ermelino Matarazzo",    "Freguesia/BrasilÃ¢ndia",
+    "Guaianases",                 "Ipiranga",              "Itaim Paulista",
+    "Itaquera",                   "Jabaquara",             "JaÃ§anÃ£/Tremembé",
+    "Lapa",                       "M'Boi Mirim",           "Mooca",
+    "Parelheiros",                "Penha",                 "Perus/Anhanguera",
+    "Pinheiros",                  "Pirituba/Jaraguá",      "Santana/Tucuruvi",
+    "Santo Amaro",                "SÃ£o Mateus",            "SÃ£o Miguel Paulista",
+    "Sapopemba",                  "Sé",                    "Vila Maria/Vila Guilherme",
+    "Vila Mariana",               "Vila Prudente"
+  )
+)
+```
+
+## Caminhos dos arquivos
+
+As bases orçamentárias sÃ£o arquivos locais coletados até **05/05/2026**.
+
+Para atualizar, basta **substituir os arquivos** e ajustar os nomes abaixo.
+
+```{r caminhos}
+# ============================================================================
+# CONFIGURACAO DE ARQUIVOS — EDITE AQUI para atualizar as bases
+# ============================================================================
+
+# 1) Pasta de dados:
+# - se existir `dados/`, usa ela
+# - senao, usa a pasta atual (.)
+pasta_dados <- dplyr::case_when(
+  dir.exists("dados") ~ "dados",
+  dir.exists(file.path("R Markdown", "dados")) ~ file.path("R Markdown", "dados"),
+  TRUE ~ "."
+)
+pasta_dados <- normalizePath(pasta_dados, winslash = "/", mustWork = FALSE)
+
+cat("ðŸ“ Pasta de dados:", pasta_dados, "\n")
+
+achar_arquivo <- function(candidatos, pasta) {
+  for (nm in candidatos) {
+    p <- file.path(pasta, nm)
+    if (file.exists(p)) return(p)
+  }
+  return(NA_character_)
+}
+
+arquivo_2022 <- achar_arquivo(c("basedadosDA_1222_validado.xlsx", "base_2022_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
+arquivo_2023 <- achar_arquivo(c("basedadosDA_1223_validado.xlsx", "base_2023_SEPLAN_IDRGP_2025.xlsx", "basedadosDA_1223.csv.xlsx"), pasta_dados)
+arquivo_2024 <- achar_arquivo(c("basedadosDA_1224_validado.xlsx", "base_2024_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
+arquivo_2025 <- achar_arquivo(c("basedadosDA_1225_validado.xlsx", "base_2025_SEPLAN_IDRGP_2025.xlsx"), pasta_dados)
+arquivo_ivu  <- achar_arquivo(c("ivu_subprefeituras_2025.xlsx"), pasta_dados)
+
+# Shapefile (pega o arquivo indicado; se nao achar, tenta o 1Âº .shp da pasta)
+arquivo_shp  <- achar_arquivo(c("subprefeitura_v2.shp"), pasta_dados)
+if (is.na(arquivo_shp)) {
+  shp_encontrados <- list.files(pasta_dados, pattern = "\\.shp$", full.names = TRUE, ignore.case = TRUE)
+  arquivo_shp <- if (length(shp_encontrados) > 0) shp_encontrados[1] else NA_character_
+}
+
+# Pasta de saída
+pasta_saida <- "resultados"
+if (!dir.exists(pasta_saida)) dir.create(pasta_saida)
+
+arquivos_necessarios <- c(arquivo_2022, arquivo_2023, arquivo_2024, arquivo_2025, arquivo_ivu, arquivo_shp)
+nomes_necessarios <- c("2022","2023","2024","2025","IVU","Shapefile")
+
+if (any(is.na(arquivos_necessarios)) || any(!file.exists(arquivos_necessarios))) {
+  stop(
+    "Arquivos faltando.\n",
+    paste0("- ", nomes_necessarios, ": ", arquivos_necessarios, collapse = "\n"),
+    "\n\nConteúdo da pasta de dados:\n- ",
+    paste(list.files(pasta_dados), collapse = "\n- ")
+  )
+}
+
+# Extra: shapefile precisa dos arquivos auxiliares (.dbf/.shx/.prj)
+base_shp <- sub("\\.shp$", "", arquivo_shp, ignore.case = TRUE)
+aux_shp  <- c(paste0(base_shp, ".dbf"), paste0(base_shp, ".shx"), paste0(base_shp, ".prj"))
+aux_faltando <- aux_shp[!file.exists(aux_shp)]
+if (length(aux_faltando) > 0) {
+  warning("Shapefile sem arquivos auxiliares: ", paste(basename(aux_faltando), collapse = ", "))
+}
+```
+
+## (NOVO) Validacao e padronizacao da lista oficial de acoes (referencia 2024) - `25_DA`
+
+Este chunk cria **objetos derivados** (sufixo `_25_DA`) e define o universo oficial de acoes
+do recorte tematico a partir da planilha:
+
+- `dados/Despesas_IDRGP_2024.xlsx`
+
+```{r acoes_ref_2024_25_DA, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# ACOES OFICIAIS (2024) - recorte tematico 25_DA
+# ============================================================================
+
+arquivo_ref_acoes_2024_25_DA <- file.path(pasta_dados, "Despesas_IDRGP_2024.xlsx")
+if (!file.exists(arquivo_ref_acoes_2024_25_DA)) {
+  stop("Arquivo de referencia nao encontrado: ", arquivo_ref_acoes_2024_25_DA)
+}
+
+padronizar_codigo_acao_25_DA <- function(x) {
+  x <- as.character(x)
+  x <- iconv(x, from = "", to = "UTF-8", sub = "")
+  x <- stringr::str_squish(x)
+  x <- stringr::str_replace_all(x, "[^0-9]", "")
+  x <- dplyr::na_if(x, "")
+  x
+}
+
+padronizar_acao_texto_25_DA <- function(x) {
+  x <- as.character(x)
+  x <- iconv(x, from = "", to = "UTF-8", sub = "")
+  x <- stringr::str_replace_all(x, "[\u00a0\u200b\u200c\u200d\u200e\u200f\ufeff]", " ")
+  x <- stringr::str_squish(x)
+  x <- dplyr::na_if(x, "")
+  x
+}
+
+# Regex robusta para separar "CODIGO - ACAO" em `descricao_proj_ativ`, sem depender do encoding do arquivo.
+# Inclui hifen normal e variacoes Unicode de travessao.
+regex_separador_codigo_acao_25_DA <- "[-\\u2010\\u2011\\u2012\\u2013\\u2014\\u2015:]"
+
+acoes_ref_2024_raw_25_DA <- readxl::read_excel(arquivo_ref_acoes_2024_25_DA) |>
+  janitor::clean_names()
+
+col_codigo_ref_25_DA <- intersect(names(acoes_ref_2024_raw_25_DA), c("codigo_acao", "cod_acao", "codigo", "acao_codigo"))[1]
+col_acao_ref_25_DA   <- intersect(names(acoes_ref_2024_raw_25_DA), c("acao", "nome_acao", "descricao_acao", "descricao"))[1]
+
+if (is.na(col_codigo_ref_25_DA)) stop("Coluna `codigo_acao` nao encontrada em ", basename(arquivo_ref_acoes_2024_25_DA))
+if (is.na(col_acao_ref_25_DA))   stop("Coluna `acao` nao encontrada em ", basename(arquivo_ref_acoes_2024_25_DA))
+
+acoes_ref_2024_25_DA <- acoes_ref_2024_raw_25_DA |>
+  dplyr::transmute(
+    codigo_acao = padronizar_codigo_acao_25_DA(.data[[col_codigo_ref_25_DA]]),
+    acao        = padronizar_acao_texto_25_DA(.data[[col_acao_ref_25_DA]])
+  ) |>
+  dplyr::mutate(acao_norm = norm_name(acao)) |>
+  dplyr::filter(!is.na(codigo_acao) | !is.na(acao)) |>
+  dplyr::distinct() |>
+  dplyr::arrange(codigo_acao, acao)
+
+codigos_ref_25_DA <- acoes_ref_2024_25_DA |>
+  dplyr::filter(!is.na(codigo_acao)) |>
+  dplyr::pull(codigo_acao) |>
+  unique()
+
+acoes_ref_norm_25_DA <- acoes_ref_2024_25_DA |>
+  dplyr::filter(!is.na(acao_norm)) |>
+  dplyr::pull(acao_norm) |>
+  unique()
+
+cat("OK - Acoes oficiais (2024) carregadas:", nrow(acoes_ref_2024_25_DA), "\n")
+cat("  - Com `codigo_acao`:", length(codigos_ref_25_DA), "\n")
+cat("  - Com `acao` (normalizada):", length(acoes_ref_norm_25_DA), "\n")
+```
+
+```{r auditoria_referencia_25_DA, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# AUDITORIA MINIMALISTA DA LISTA DE REFERENCIA (2024)
+# ============================================================================
+
+if (exists("acoes_ref_2024_25_DA")) {
+  cat("--- Auditoria: acoes_ref_2024_25_DA ---\n")
+  cat("Total de acoes na referencia:", nrow(acoes_ref_2024_25_DA), "\n")
+  
+  audit_ref <- acoes_ref_2024_25_DA |>
+    dplyr::mutate(
+      nchar_cod = nchar(as.character(codigo_acao)),
+      tem_zero = stringr::str_detect(as.character(codigo_acao), "^0")
+    )
+  
+  print(table(audit_ref$nchar_cod, dnn = "Dígitos no codigo_acao"))
+  cat("Acoes com zero a esquerda:", sum(audit_ref$tem_zero, na.rm = TRUE), "\n")
+  
+  write_xlsx(audit_ref, path = file.path(pasta_saida_25_DA, "logs_25_DA", "auditoria_referencia_minimal_25_DA.xlsx"))
+}
+```
+
+```{r saidas_25_DA, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# SAIDAS (25_DA) - nao escreve nas pastas do IDRGP_2025 original
+# ============================================================================
+# Mantem `pasta_saida_original_25_DA` apenas para rastreabilidade.
+
+pasta_saida_original_25_DA <- pasta_saida
+
+pasta_saida_25_DA <- "outputs_25_DA"
+subpastas_25_DA <- c(
+  "mapas_25_DA",
+  "graficos_25_DA",
+  "tabelas_25_DA",
+  "logs_25_DA"
+)
+
+if (!dir.exists(pasta_saida_25_DA)) dir.create(pasta_saida_25_DA, recursive = TRUE)
+for (sp in subpastas_25_DA) {
+  p <- file.path(pasta_saida_25_DA, sp)
+  if (!dir.exists(p)) dir.create(p, recursive = TRUE)
+}
+
+# Redireciona o pipeline para escrever SOMENTE nas novas pastas
+pasta_saida <- pasta_saida_25_DA
+
+cat("OK - Saidas originais (preservadas):", pasta_saida_original_25_DA, "\n")
+cat("OK - Saidas ativas (25_DA):        ", pasta_saida_25_DA, "\n")
+```
+
+# AOE ou IDRGP Alvo
+
+O AOE (ou **IDRGP Alvo**) é o índice de referencia que indica qual proporção dos gastos públicos deveria ser destinada a cada subprefeitura. Nesta análise utilizamos o **IVU (2025)**.
+
+## Importação do IVU
+
+```{r idrgp_alvo}
+df_idrgp <- readxl::read_excel(arquivo_ivu) |>
+  janitor::clean_names() |>
+  dplyr::select(nome_subpref, ivu_geral) |>
+  dplyr::rename(subprefeitura = nome_subpref) |>
+  dplyr::mutate(
+    ivu_geral  = as.numeric(ivu_geral),
+    idrgp_alvo = ivu_geral / sum(ivu_geral, na.rm = TRUE),
+    subprefeitura = stringr::str_replace_all(subprefeitura, "^Subprefeitura de ", ""),
+    subprefeitura = stringr::str_replace_all(subprefeitura, "^Subprefeitura ", ""),
+    subprefeitura = dplyr::case_when(
+      subprefeitura == "SÃ£o Miguel" ~ "SÃ£o Miguel Paulista",
+      subprefeitura == "Perus"      ~ "Perus/Anhanguera",
+      subprefeitura == "Itaim"      ~ "Itaim Paulista",
+      TRUE ~ subprefeitura
+    )
+  ) |>
+  dplyr::select(subprefeitura, idrgp_alvo) |>
+  dplyr::arrange(dplyr::desc(idrgp_alvo))
+```
+
+## Controles de qualidade (IVU)
+
+```{r controle_idrgp}
+soma_idrgp <- sum(df_idrgp$idrgp_alvo, na.rm = TRUE)
+if (abs(soma_idrgp - 1) > 0.001) {
+  warning("ATENCAO: o IDRGP Alvo nao soma 1 (soma = ", round(soma_idrgp, 6), ").")
+} else {
+  cat("✅ IDRGP Alvo verificado: soma =", round(soma_idrgp, 6), "\n")
+}
+
+cat("Subprefeituras no IDRGP:", nrow(df_idrgp), "(esperado: 32)\n")
+
+df_idrgp <- df_idrgp |>
+  mutate(
+    subprefeitura = str_squish(subprefeitura),
+    join_key      = norm_name(subprefeitura)
+  )
+
+knitr::kable(
+  df_idrgp |> select(subprefeitura, idrgp_alvo),
+  col.names = c("Subprefeitura", "IDRGP Alvo"),
+  digits = 4, caption = "IDRGP Alvo (baseado no IVU 2025)"
+)
+```
+
+# Dados Orçamentários e Limpeza
+
+Nesta seção, as bases orçamentárias dos **4 anos** do ciclo PPA são importadas e padronizadas por uma **função de limpeza unificada**.
+
+## Funções (importação e regionalização)
+
+```{r funcoes_orcamento}
+detectar_sheet <- function(arquivo, ano) {
+  sheets <- readxl::excel_sheets(arquivo)
+  match <- stringr::str_detect(sheets, as.character(ano))
+  if (any(match)) sheets[which(match)[1]] else sheets[1]
+}
+
+padronizar_subprefeitura <- function(x) {
+  x <- as.character(x)
+  x <- str_replace_all(x, "^Subprefeitura de ", "")
+  x <- str_replace_all(x, "^Subprefeitura ", "")
+  x <- case_when(
+    x %in% c("Supra Centro", "Supra Subprefeitura Centro") ~ "Sé",
+    TRUE ~ x
+  )
+  str_squish(x)
+}
+
+# ============================================================================
+# UTILITARIOS DE VALIDACAO E PADRONIZACAO (25_DA)
+# ============================================================================
+
+validar_presenca_colunas_25_DA <- function(df, cols_obrigatorias) {
+  faltantes <- setdiff(cols_obrigatorias, names(df))
+  if (length(faltantes) > 0) {
+    warning("Colunas ausentes no dataframe: ", paste(faltantes, collapse = ", "))
+    return(FALSE)
+  }
+  return(TRUE)
+}
+
+# Tenta encontrar colunas equivalentes de forma leve
+detectar_coluna_25_DA <- function(df, candidatos) {
+  nm <- names(df)
+  found <- intersect(nm, candidatos)[1]
+  if (is.na(found)) {
+    # Tenta regex simples se nao achou por interseccao direta
+    padrao <- paste(candidatos, collapse = "|")
+    found <- nm[stringr::str_detect(nm, stringr::regex(padrao, ignore_case = TRUE))][1]
+  }
+  found
+}
+
+padronizar_colunas_base <- function(df) {
+  if (is.null(df)) return(NULL)
+  nm <- names(df)
+  
+  # Lista de candidatos por categoria
+  cands_desc <- c("descricao_proj_ativ", "descricao_projeto_atividade", "projeto_atividade", "proj_ativ", "descricao", "nome_acao", "acao")
+  cands_sub  <- c("subprefeitura", "nm_subprefeitura", "nome_subprefeitura", "subpref", "nm_subpref")
+  cands_val  <- c("valor_detalhamento_acao", "valor_liquidado", "valor_empenhado", "valor_pago", "valor_atualizado", "valor", "valor_total")
+  cands_cod  <- c("codigo_acao", "cod_acao", "cd_acao", "acao_codigo", "codigo_projeto_atividade")
+
+  # Deteccao
+  col_desc <- detectar_coluna_25_DA(df, cands_desc)
+  col_sub  <- detectar_coluna_25_DA(df, cands_sub)
+  col_val  <- detectar_coluna_25_DA(df, cands_val)
+  col_cod  <- detectar_coluna_25_DA(df, cands_cod)
+  
+  res <- df
+  # Renomeia apenas se encontrou algo novo e diferente do padrao
+  if (!is.na(col_desc)) res <- res |> rename(descricao_proj_ativ = !!sym(col_desc))
+  if (!is.na(col_sub))  res <- res |> rename(subprefeitura = !!sym(col_sub))
+  if (!is.na(col_val))  res <- res |> rename(valor_detalhamento_acao = !!sym(col_val))
+  if (!is.na(col_cod))  res <- res |> rename(codigo_acao_base = !!sym(col_cod))
+  
+  res
+}
+
+padronizar_codigo_acao_25_DA <- function(x) {
+  if (is.null(x)) return(NA_character_)
+  x <- as.character(x)
+  # Apenas limpa espacos e remove caracteres nao numericos básicos se necessário, 
+  # mas preserva zeros à esquerda convertendo com stringr::str_pad se for 4 digitos
+  x <- stringr::str_trim(x)
+  x <- stringr::str_remove_all(x, "[^0-9]") 
+  x[x == "" | is.na(x)] <- NA_character_
+  x
+}
+
+resumo_regionalizacao <- function(arquivo, ano, sheet = 1) {
+  df_raw <- read_excel(arquivo, sheet = sheet) |> clean_names()
+  
+  cat("ℹ️ Lendo", nrow(df_raw), "linhas de:", basename(arquivo), "\n")
+  
+  df_prep <- padronizar_colunas_base(df_raw)
+  
+  # Verificacao defensiva minima
+  if (!"descricao_proj_ativ" %in% names(df_prep) || !"valor_detalhamento_acao" %in% names(df_prep)) {
+    warning("⚠️ Arquivo ignorado: colunas essenciais não encontradas em ", basename(arquivo))
+    return(NULL)
+  }
+
+  df <- df_prep |>
+    mutate(
+      subprefeitura = if ("subprefeitura" %in% names(df_prep)) padronizar_subprefeitura(subprefeitura) else NA_character_,
+      valor_detalhamento_acao = as.numeric(valor_detalhamento_acao),
+      regionalizado = !is.na(subprefeitura) & subprefeitura != "" & !str_detect(subprefeitura, "Supra")
+    ) |>
+    mutate(
+      .desc = as.character(descricao_proj_ativ),
+      .desc = str_squish(.desc),
+      .m = stringr::str_match(
+        .desc,
+        paste0("^\\s*([0-9]{3,8})\\s*", regex_separador_codigo_acao_25_DA, "\\s*(.*)$")
+      ),
+      codigo_acao = dplyr::coalesce(
+        if ("codigo_acao_base" %in% names(df_prep)) padronizar_codigo_acao_25_DA(codigo_acao_base) else NA_character_,
+        padronizar_codigo_acao_25_DA(.m[, 2])
+      ),
+      acao = dplyr::coalesce(
+        if ("acao_base_txt" %in% names(df_prep)) padronizar_acao_texto_25_DA(acao_base_txt) else NA_character_,
+        padronizar_acao_texto_25_DA(.m[, 3])
+      ),
+      acao_norm = norm_name(acao)
+    )
+
+  # Filtro simplificado
+  df_filtrado <- df |>
+    filter(
+      (!is.na(codigo_acao) & codigo_acao %in% codigos_ref_25_DA) |
+        (is.na(codigo_acao) & !is.na(acao_norm) & acao_norm %in% acoes_ref_norm_25_DA)
+    )
+  
+  if (nrow(df_filtrado) == 0) {
+    warning("⚠️ Nenhuma correspondência 25_DA encontrada para ", ano)
+    return(NULL)
+  }
+
+  res <- df_filtrado |>
+    group_by(descricao_proj_ativ) |>
+    summarise(
+      ano = as.integer(ano),
+      valor_total = sum(valor_detalhamento_acao, na.rm = TRUE),
+      valor_regionalizado = sum(if_else(regionalizado, valor_detalhamento_acao, 0), na.rm = TRUE),
+      perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_),
+      n_subpref = n_distinct(subprefeitura[regionalizado]),
+      .groups = "drop"
+    )
+
+  res
+}
+
+limpar_orcamento <- function(arquivo, ano, sheet = 1) {
+  df <- read_excel(arquivo, sheet = sheet) |> clean_names()
+
+  col_valor <- coluna_valor_orc(df)
+  if (is.na(col_valor)) stop("Coluna de valor nao encontrada em ", arquivo)
+  df <- df |> rename(valor_detalhamento_acao = !!sym(col_valor))
+
+  # (Opcional) Identificador da ação/empenho.
+  # Algumas bases trazem um "código de empenho" (ou equivalente). Quando nao existir,
+  # usamos `descricao_proj_ativ` como fallback determinístico.
+  col_codigo_empenho <- intersect(
+    names(df),
+    c("codigo_empenho", "cod_empenho", "cd_empenho", "empenho", "codigo", "cod")
+  )[1]
+  if (is.na(col_codigo_empenho) || length(col_codigo_empenho) == 0) {
+    col_codigo_empenho <- "descricao_proj_ativ"
+  }
+
+  df <- df |>
+    mutate(
+      subprefeitura = padronizar_subprefeitura(subprefeitura)
+    ) |>
+    filter(
+      !str_detect(replace_na(subprefeitura, ""), "Supra"),
+      !is.na(subprefeitura),
+      subprefeitura != ""
+    ) |>
+    transmute(
+      codigo_empenho = as.character(.data[[col_codigo_empenho]]),
+      descricao_proj_ativ,
+      subprefeitura,
+      valor_detalhamento_acao
+    ) |>
+    mutate(ano = as.integer(ano))
+
+  cat("✅ Ano", ano, ":", nrow(df), "linhas,",
+      n_distinct(df$subprefeitura), "subprefeituras,",
+      "R$", format(sum(df$valor_detalhamento_acao, na.rm = TRUE),
+                   big.mark = ".", decimal.mark = ","), "\n")
+
+  df
+}
+
+agregar_por_subpref <- function(df) {
+  df |>
+    group_by(subprefeitura) |>
+    summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop")
+}
+
+# ============================================================================
+# ETAPA DE DIAGNOSTICO: Auditoria de Join e Filtros (Pre-processamento)
+# ============================================================================
+
+diagnostico_join_individual_25_DA <- function(df_base, ano_ref) {
+  if (is.null(df_base)) return(NULL)
+  
+  df_prep <- padronizar_colunas_base(df_base)
+  
+  # Verifica se temos a coluna de descricao minima para diagnostico
+  if (!"descricao_proj_ativ" %in% names(df_prep)) {
+    message("ℹ️ Diagnóstico pulado para ", ano_ref, ": Coluna de descrição não encontrada.")
+    return(NULL)
+  }
+  
+  # 1) Antes do filtro
+  n_inicial <- nrow(df_prep)
+  
+  # Extração defensiva
+  df_ext <- df_prep |>
+    mutate(
+      .desc = as.character(descricao_proj_ativ),
+      .desc = str_squish(.desc),
+      .m = stringr::str_match(
+        .desc,
+        paste0("^\\s*([0-9]{3,8})\\s*", regex_separador_codigo_acao_25_DA, "\\s*(.*)$")
+      ),
+      codigo_extraido = padronizar_codigo_acao_25_DA(.m[, 2]),
+      acao_extraida = padronizar_acao_texto_25_DA(.m[, 3]),
+      acao_norm_extraida = norm_name(acao_extraida)
+    )
+  
+  # 2) Análise de Cobertura
+  match_por_codigo <- df_ext |> filter(!is.na(codigo_extraido) & codigo_extraido %in% codigos_ref_25_DA)
+  match_por_texto  <- df_ext |> filter(is.na(codigo_extraido) & !is.na(acao_norm_extraida) & acao_norm_extraida %in% acoes_ref_norm_25_DA)
+  
+  cat("\n--- Diagnostico Simplificado:", ano_ref, "---\n")
+  cat("Linhas Iniciais:   ", n_inicial, "\n")
+  cat("Match por Codigo:  ", nrow(match_por_codigo), "\n")
+  cat("Match por Texto:   ", nrow(match_por_texto), "\n")
+  cat("Total Matches:     ", nrow(match_por_codigo) + nrow(match_por_texto), "\n")
+  
+  if (nrow(match_por_codigo) == 0 && n_inicial > 0) {
+    cat("Aviso: Zero matches por codigo.\n")
+  }
+  
+  list(
+    ano = ano_ref,
+    n_inicial = n_inicial,
+    n_match_cod = nrow(match_por_codigo),
+    n_match_txt = nrow(match_por_texto),
+    amostra_nao_encontrados = df_ext |> 
+      filter(!(codigo_extraido %in% codigos_ref_25_DA | acao_norm_extraida %in% acoes_ref_norm_25_DA)) |>
+      select(dplyr::any_of(c("descricao_proj_ativ", "codigo_extraido", "acao_extraida"))) |>
+      head(15)
+  )
+}
+```
+```
+
+## Processamento dos 4 anos
+
+```{r processamento, message=FALSE, warning=FALSE}
+anos <- 2022:2025
+arquivos <- c(arquivo_2022, arquivo_2023, arquivo_2024, arquivo_2025)
+names(arquivos) <- as.character(anos)
+
+# Bases detalhadas (para tabelas por órgÃ£o, quando necessário)
+basedadosDA_2022 <- readxl::read_xlsx(arquivo_2022)
+basedadosDA_2023 <- readxl::read_xlsx(arquivo_2023)
+basedadosDA_2024 <- readxl::read_xlsx(arquivo_2024)
+basedadosDA_2025 <- readxl::read_xlsx(arquivo_2025)
+
+dfs <- purrr::imap(arquivos, function(arq, ano_chr) {
+  ano <- as.integer(ano_chr)
+  aba <- detectar_sheet(arq, ano)
+  limpar_orcamento(arq, ano, aba)
+})
+
+agrs <- purrr::map(dfs, agregar_por_subpref)
+
+list2env(setNames(dfs,  paste0("df_", anos)),  envir = .GlobalEnv)
+list2env(setNames(agrs, paste0("df_agr_", anos)), envir = .GlobalEnv)
+
+```{r auditoria_objetos_pos_limpeza_25_DA, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# AUDITORIA ESTRUTURAL DEFENSIVA
+# ============================================================================
+
+verificar_obj_25_DA <- function(nome) {
+  if (!exists(nome)) return(NULL)
+  obj <- get(nome)
+  tibble(
+    objeto = nome,
+    linhas = nrow(obj),
+    colunas = paste(names(obj), collapse = ", "),
+    tem_ano = "ano" %in% names(obj)
+  )
+}
+
+resumo_auditoria <- bind_rows(
+  verificar_obj_25_DA("df_2022"), verificar_obj_25_DA("df_2023"),
+  verificar_obj_25_DA("df_2024"), verificar_obj_25_DA("df_2025")
+)
+
+if (nrow(resumo_auditoria) > 0) {
+  knitr::kable(resumo_auditoria, caption = "Estrutura das Bases Apos Limpeza")
+}
+
+# Diagnostico rápido de 2025
+if (exists("basedadosDA_2025")) {
+  diag_2025 <- diagnostico_join_individual_25_DA(basedadosDA_2025, 2025)
+  if (!is.null(diag_2025)) {
+    write_xlsx(diag_2025$amostra_nao_encontrados, path = file.path(pasta_saida_25_DA, "logs_25_DA", "amostra_sem_match_2025.xlsx"))
+  }
+}
+```
+
+# ============================================================================
+# (NOVO) Recorte tematico 25_DA - filtra apenas as acoes da lista oficial 2024
+# ============================================================================
+
+extrair_codigo_acao_e_texto_25_DA <- function(df) {
+  desc <- as.character(df$descricao_proj_ativ)
+  desc <- iconv(desc, from = "", to = "UTF-8", sub = "")
+  desc <- stringr::str_replace_all(desc, "[\u00a0\u200b\u200c\u200d\u200e\u200f\ufeff]", " ")
+  desc <- stringr::str_squish(desc)
+
+  m <- stringr::str_match(
+    desc,
+    paste0("^\\s*([0-9]{3,8})\\s*", regex_separador_codigo_acao_25_DA, "\\s*(.*)$")
+  )
+  codigo <- m[, 2]
+  acao_txt <- m[, 3]
+
+  # Prioriza o codigo extraido da descricao. So usa fallback `codigo_empenho`
+  # quando ele parecer um `codigo_acao` (numerico curto) e estiver no universo 2024.
+  codigo_desc <- padronizar_codigo_acao_25_DA(codigo)
+  codigo_fallback <- padronizar_codigo_acao_25_DA(df$codigo_empenho)
+  codigo_fallback <- dplyr::if_else(
+    !is.na(codigo_fallback) & nchar(codigo_fallback) <= 8 & codigo_fallback %in% codigos_ref_25_DA,
+    codigo_fallback,
+    NA_character_
+  )
+  codigo <- dplyr::coalesce(codigo_desc, codigo_fallback)
+  acao_txt <- padronizar_acao_texto_25_DA(acao_txt)
+
+  df |>
+    dplyr::mutate(
+      codigo_acao = codigo,
+      acao = acao_txt,
+      acao_norm = norm_name(acao)
+    )
+}
+
+# 1) Enriquecimento: cria colunas obrigatorias (ano/codigo_acao/acao/subprefeitura/valor_liquidado)
+dfs_enriq_25_DA <- purrr::map(dfs, function(df) {
+  extrair_codigo_acao_e_texto_25_DA(df) |>
+    dplyr::rename(valor_liquidado = valor_detalhamento_acao) |>
+    # Mantem um alias para compatibilidade com chunks antigos (nao altera valores)
+    dplyr::mutate(valor_detalhamento_acao = valor_liquidado) |>
+    dplyr::select(ano, codigo_acao, acao, subprefeitura, valor_liquidado, dplyr::everything())
+})
+
+# Diagnostico rapido: qualidade da extracao de `codigo_acao` por ano (espera-se alta cobertura)
+diag_codigo_acao_25_DA <- purrr::imap_dfr(dfs_enriq_25_DA, function(df, ano_chr) {
+  tibble(
+    ano = as.integer(ano_chr),
+    n_linhas = nrow(df),
+    pct_codigo_acao_na = mean(is.na(df$codigo_acao)),
+    n_codigos_distintos = dplyr::n_distinct(df$codigo_acao, na.rm = TRUE),
+    n_codigos_ref_encontrados = sum(unique(df$codigo_acao[!is.na(df$codigo_acao)]) %in% codigos_ref_25_DA),
+    pct_ref_encontrados = if (length(codigos_ref_25_DA) > 0) n_codigos_ref_encontrados / length(codigos_ref_25_DA) else NA_real_
+  )
+})
+
+knitr::kable(
+  diag_codigo_acao_25_DA |>
+    dplyr::mutate(
+      pct_codigo_acao_na = scales::label_percent(accuracy = 0.1)(pct_codigo_acao_na),
+      pct_ref_encontrados = scales::label_percent(accuracy = 0.1)(pct_ref_encontrados)
+    ),
+  caption = "Diagnostico 25_DA - cobertura de `codigo_acao` e aderencia a lista de 2024"
+)
+
+# 2) Filtro: aplica a lista oficial (codigo prioritario; texto secundario)
+dfs_25_DA <- purrr::map(dfs_enriq_25_DA, function(df) {
+  df |>
+    dplyr::mutate(
+      .match_codigo = !is.na(codigo_acao) & codigo_acao %in% codigos_ref_25_DA,
+      .match_texto  = !.match_codigo & !is.na(acao_norm) & acao_norm %in% acoes_ref_norm_25_DA
+    ) |>
+    dplyr::filter(.match_codigo | .match_texto) |>
+    dplyr::select(-.match_codigo, -.match_texto)
+})
+
+# Agregação específica 25_DA (usa `valor_liquidado`, mantendo compatibilidade)
+agregar_por_subpref_25_DA <- function(df) {
+  df |>
+    dplyr::group_by(subprefeitura) |>
+    dplyr::summarise(valor = sum(valor_liquidado, na.rm = TRUE), .groups = "drop")
+}
+
+agrs_25_DA <- purrr::map(dfs_25_DA, agregar_por_subpref_25_DA)
+
+list2env(setNames(dfs_25_DA,  paste0("df_", anos, "_25_DA")),  envir = .GlobalEnv)
+list2env(setNames(agrs_25_DA, paste0("df_agr_", anos, "_25_DA")), envir = .GlobalEnv)
+
+# 3) Verificacao 2025: join por `codigo_acao` (prioritario) e por `acao` (secundario)
+acoes_base_2025_25_DA <- dfs_enriq_25_DA[["2025"]] |>
+  dplyr::distinct(codigo_acao, acao, acao_norm) |>
+  dplyr::arrange(codigo_acao, acao)
+
+verif_2025_por_codigo_25_DA <- acoes_ref_2024_25_DA |>
+  dplyr::left_join(
+    acoes_base_2025_25_DA |> dplyr::select(codigo_acao, acao_base = acao, acao_norm_base = acao_norm),
+    by = "codigo_acao"
+  ) |>
+  dplyr::mutate(
+    encontrado_por = dplyr::if_else(!is.na(acao_base) | !is.na(acao_norm_base), "codigo_acao", NA_character_),
+    diferenca_nomenclatura = dplyr::if_else(!is.na(acao_base) & !is.na(acao) & norm_name(acao_base) != norm_name(acao), TRUE, FALSE)
+  )
+
+verif_2025_faltantes_25_DA <- verif_2025_por_codigo_25_DA |>
+  dplyr::filter(is.na(encontrado_por) & !is.na(acao_norm)) |>
+  dplyr::select(codigo_acao, acao, acao_norm)
+
+verif_2025_por_texto_25_DA <- verif_2025_faltantes_25_DA |>
+  dplyr::left_join(
+    acoes_base_2025_25_DA |> dplyr::select(codigo_acao_base = codigo_acao, acao_base = acao, acao_norm_base = acao_norm),
+    by = c("acao_norm" = "acao_norm_base")
+  ) |>
+  dplyr::mutate(encontrado_por = dplyr::if_else(!is.na(codigo_acao_base) | !is.na(acao_base), "acao", NA_character_))
+
+verificacao_acoes_2025_25_DA <- verif_2025_por_codigo_25_DA |>
+  dplyr::left_join(
+    verif_2025_por_texto_25_DA |> dplyr::select(codigo_acao, encontrado_por_texto = encontrado_por, codigo_acao_base, acao_base_texto = acao_base),
+    by = "codigo_acao"
+  ) |>
+  dplyr::mutate(
+    encontrado = dplyr::case_when(
+      !is.na(encontrado_por) ~ TRUE,
+      !is.na(encontrado_por_texto) ~ TRUE,
+      TRUE ~ FALSE
+    ),
+    encontrado_por = dplyr::coalesce(encontrado_por, encontrado_por_texto),
+    acao_encontrada = dplyr::coalesce(acao_base, acao_base_texto),
+    codigo_encontrado_por_texto = codigo_acao_base
+  ) |>
+  dplyr::select(
+    codigo_acao, acao,
+    encontrado, encontrado_por,
+    acao_encontrada,
+    diferenca_nomenclatura,
+    codigo_encontrado_por_texto
+  ) |>
+  dplyr::arrange(desc(encontrado), codigo_acao, acao)
+
+base_2025_cod_sem_texto_25_DA <- acoes_base_2025_25_DA |>
+  dplyr::filter(!is.na(codigo_acao) & is.na(acao)) |>
+  dplyr::mutate(observacao = "codigo_acao existe na base 2025, mas `acao` ausente (mantido; acao=NA).")
+
+base_2025_texto_sem_codigo_25_DA <- acoes_base_2025_25_DA |>
+  dplyr::filter(is.na(codigo_acao) & !is.na(acao)) |>
+  dplyr::mutate(observacao = "registro com `acao`, mas sem `codigo_acao` extraivel (mantido).")
+
+log_path_25_DA <- file.path(pasta_saida_25_DA, "logs_25_DA", "verificacao_acoes_2025_25_DA.xlsx")
+write_xlsx(
+  list(
+    referencia_2024 = acoes_ref_2024_25_DA,
+    base_2025_distinta = acoes_base_2025_25_DA,
+    verificacao = verificacao_acoes_2025_25_DA,
+    base_2025_cod_sem_texto = base_2025_cod_sem_texto_25_DA,
+    base_2025_texto_sem_codigo = base_2025_texto_sem_codigo_25_DA
+  ),
+  path = log_path_25_DA
+)
+
+cat("OK - Log de verificacao (2025) salvo em:", log_path_25_DA, "\n")
+
+# ============================================================================
+# (NOVO) Tabelas de conferencia (2022-2025) - validacao do cruzamento
+# ============================================================================
+# Exporta automaticamente uma planilha por ano com status_match e agregados.
+
+gerar_conferencia_acoes_ano_25_DA <- function(ano_ref, df_base_ano) {
+  ano_ref <- as.integer(ano_ref)
+
+  df_base_ano <- df_base_ano |>
+    dplyr::mutate(
+      ano = as.integer(ano),
+      valor_liquidado = suppressWarnings(as.numeric(valor_liquidado)),
+      subprefeitura = as.character(subprefeitura)
+    )
+
+  base_distinta <- df_base_ano |>
+    dplyr::distinct(codigo_acao, acao, acao_norm)
+
+  # join por codigo (prioritario)
+  por_codigo <- acoes_ref_2024_25_DA |>
+    dplyr::rename(codigo_acao_ref = codigo_acao, acao_ref = acao, acao_norm_ref = acao_norm) |>
+    dplyr::left_join(
+      base_distinta |>
+        dplyr::rename(codigo_acao_base = codigo_acao, acao_base = acao, acao_norm_base = acao_norm),
+      by = c("codigo_acao_ref" = "codigo_acao_base")
+    ) |>
+    dplyr::mutate(
+      match_codigo = !is.na(acao_base) | !is.na(acao_norm_base),
+      correspondencia_exata = dplyr::if_else(
+        match_codigo & !is.na(acao_norm_ref) & !is.na(acao_norm_base) & (acao_norm_ref == acao_norm_base),
+        TRUE, FALSE, missing = FALSE
+      ),
+      correspondencia_parcial = dplyr::if_else(
+        match_codigo & !is.na(acao_norm_ref) & !is.na(acao_norm_base) & (acao_norm_ref != acao_norm_base),
+        TRUE, FALSE, missing = FALSE
+      ),
+      codigo_sem_acao = dplyr::if_else(match_codigo & is.na(acao_base), TRUE, FALSE, missing = FALSE),
+      status_match = dplyr::case_when(
+        match_codigo & correspondencia_exata ~ "match_exato",
+        match_codigo & correspondencia_parcial ~ "match_parcial",
+        match_codigo & codigo_sem_acao ~ "codigo_sem_acao",
+        TRUE ~ NA_character_
+      )
+    )
+
+  # fallback por texto (secundario)
+  faltantes <- por_codigo |>
+    dplyr::filter(!match_codigo & !is.na(acao_norm_ref)) |>
+    dplyr::select(codigo_acao_ref, acao_ref, acao_norm_ref)
+
+  por_texto <- faltantes |>
+    dplyr::left_join(
+      base_distinta |>
+        dplyr::rename(codigo_acao_base = codigo_acao, acao_base = acao, acao_norm_base = acao_norm),
+      by = c("acao_norm_ref" = "acao_norm_base")
+    ) |>
+    dplyr::mutate(
+      match_texto = !is.na(acao_base) | !is.na(codigo_acao_base),
+      status_match = dplyr::case_when(
+        match_texto ~ "codigo_nao_encontrado",
+        TRUE ~ "acao_nao_encontrada"
+      )
+    )
+
+  conf_mapa <- por_codigo |>
+    dplyr::left_join(
+      por_texto |>
+        dplyr::select(codigo_acao_ref, codigo_acao_base_txt = codigo_acao_base, acao_base_txt = acao_base, status_match_txt = status_match),
+      by = "codigo_acao_ref"
+    ) |>
+    dplyr::mutate(
+      codigo_acao_encontrado = dplyr::if_else(
+        !is.na(acao_base) | !is.na(acao_norm_base),
+        codigo_acao_ref,
+        codigo_acao_base_txt
+      ),
+      acao_encontrada = dplyr::coalesce(acao_base, acao_base_txt),
+      status_match = dplyr::coalesce(status_match, status_match_txt, "codigo_nao_encontrado"),
+      correspondencia_exata = dplyr::coalesce(correspondencia_exata, FALSE),
+      correspondencia_parcial = dplyr::coalesce(correspondencia_parcial, FALSE) | status_match %in% c("match_parcial", "codigo_nao_encontrado"),
+      ausencia_correspondencia = status_match %in% c("acao_nao_encontrada")
+    ) |>
+    dplyr::transmute(
+      ano = ano_ref,
+      codigo_acao_ref,
+      acao_ref,
+      codigo_acao_encontrado,
+      acao_encontrada,
+      status_match,
+      correspondencia_exata,
+      correspondencia_parcial,
+      ausencia_correspondencia
+    )
+
+  resumo_valores <- df_base_ano |>
+    dplyr::left_join(
+      conf_mapa |>
+        dplyr::select(codigo_acao_ref, codigo_acao_encontrado),
+      by = c("codigo_acao" = "codigo_acao_encontrado")
+    ) |>
+    dplyr::group_by(codigo_acao_ref) |>
+    dplyr::summarise(
+      quantidade_registros_associados = dplyr::n(),
+      soma_valor_liquidado = sum(valor_liquidado, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  conferencia <- conf_mapa |>
+    dplyr::left_join(resumo_valores, by = "codigo_acao_ref") |>
+    dplyr::mutate(
+      quantidade_registros_associados = dplyr::coalesce(quantidade_registros_associados, 0L),
+      soma_valor_liquidado = dplyr::coalesce(soma_valor_liquidado, 0)
+    )
+
+  por_subprefeitura <- df_base_ano |>
+    dplyr::left_join(
+      conf_mapa |>
+        dplyr::select(codigo_acao_ref, codigo_acao_encontrado, status_match),
+      by = c("codigo_acao" = "codigo_acao_encontrado")
+    ) |>
+    dplyr::filter(!is.na(codigo_acao_ref)) |>
+    dplyr::group_by(
+      codigo_acao_ref,
+      subprefeitura,
+      status_match
+    ) |>
+    dplyr::summarise(
+      quantidade_registros_associados = dplyr::n(),
+      soma_valor_liquidado = sum(valor_liquidado, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  list(conferencia = conferencia, por_subprefeitura = por_subprefeitura)
+}
+
+for (ano_ref in c(2025, 2024, 2023, 2022)) {
+  ano_chr <- as.character(ano_ref)
+  conf <- gerar_conferencia_acoes_ano_25_DA(ano_ref, dfs_enriq_25_DA[[ano_chr]])
+
+  arq_conf <- file.path(
+    pasta_saida_25_DA,
+    "logs_25_DA",
+    paste0("conferencia_acoes_", ano_ref, "_25_DA.xlsx")
+  )
+
+  write_xlsx(
+    list(
+      conferencia = conf$conferencia,
+      por_subprefeitura = conf$por_subprefeitura
+    ),
+    path = arq_conf
+  )
+
+  cat("OK - Conferencia exportada:", arq_conf, "\n")
+}
+
+resumo_anos <- tibble(
+  ano = anos,
+  n_linhas = purrr::map_int(dfs, nrow),
+  n_subpref = purrr::map_int(agrs, ~ n_distinct(.x$subprefeitura)),
+  valor_total = purrr::map_dbl(agrs, ~ sum(.x$valor, na.rm = TRUE))
+)
+
+knitr::kable(
+  resumo_anos |>
+    mutate(valor_total = scales::label_number(
+      big.mark = ".", decimal.mark = ",", prefix = "R$ "
+    )(valor_total)),
+  col.names = c("Ano", "Linhas", "Subprefeituras", "Valor Total"),
+  caption = "Resumo das bases orçamentárias processadas"
+)
+```
+
+## Base cartográfica (uma vez só)
+
+Carregamos o shapefile das subprefeituras **uma vez** e reaproveitamos em todos os anos.
+
+```{r base_cartografica, message=FALSE, warning=FALSE}
+subprefeitura_sf <- read_sf(arquivo_shp) |>
+  clean_names() |>
+  st_make_valid() |>
+  rename(sigla = sg_subpref) |>
+  left_join(df_siglas, by = "sigla") |>
+  mutate(
+    subprefeitura = coalesce(subprefeitura, nm_subpref),
+    subprefeitura = str_squish(as.character(subprefeitura)),
+    join_key      = norm_name(subprefeitura)
+  ) |>
+  select(sigla, subprefeitura, join_key, geometry)
+```
+
+# Análises por ano (2022—2025)
+
+Nesta seção, para **cada ano** nós geramos:
+
+1) **Regionalização por ação (projeto/atividade)**  
+2) **IDRGP Real vs IDRGP Alvo** (teste KS + t pareado/Wilcoxon + classificação por IC 95%)
+
+## Funções (IDRGP por ano)
+
+```{r funcoes_idrgp_por_ano}
+testar_idrgp <- function(df_base) {
+  df_teste <- df_base |>
+    st_drop_geometry() |>
+    select(subprefeitura, valor, idrgp_alvo, idrgp_real, idrgp_diferenca, idrgp_var_percentual) |>
+    filter(!is.na(idrgp_diferenca))
+
+  vetor_dif_z <- scale(df_teste$idrgp_diferenca)[, 1]
+  teste_ks <- ks.test(vetor_dif_z, "pnorm")
+
+  if (teste_ks$p.value <= 0.05) {
+    metodo <- "wilcoxon"
+    teste_principal <- wilcox.test(
+      df_teste$idrgp_real, df_teste$idrgp_alvo,
+      paired = TRUE, conf.int = TRUE, conf.level = 0.95, exact = FALSE
+    )
+    medida_central <- median(df_teste$idrgp_diferenca, na.rm = TRUE)
+  } else {
+    metodo <- "t_pareado"
+    teste_principal <- t.test(
+      df_teste$idrgp_real, df_teste$idrgp_alvo,
+      paired = TRUE, conf.level = 0.95
+    )
+    medida_central <- unname(teste_principal$estimate)
+  }
+
+  ic_inf <- teste_principal$conf.int[1]
+  ic_sup <- teste_principal$conf.int[2]
+
+  df_teste <- df_teste |>
+    mutate(
+      status_var_percentual = case_when(
+        idrgp_var_percentual >  0.3  ~ "Acima do IDRGP Alvo",
+        idrgp_var_percentual < -0.3  ~ "Abaixo do IDRGP Alvo",
+        TRUE                         ~ "Dentro do IDRGP Alvo"
+      ),
+      status_estatistico = case_when(
+        idrgp_diferenca < ic_inf ~ "Abaixo do IDRGP Alvo",
+        idrgp_diferenca > ic_sup ~ "Acima do IDRGP Alvo",
+        TRUE                     ~ "Dentro do IDRGP Alvo"
+      )
+    )
+
+  list(
+    df_teste = df_teste,
+    teste_ks = teste_ks,
+    teste_principal = teste_principal,
+    metodo = metodo,
+    medida_central = medida_central,
+    ic_inf = ic_inf,
+    ic_sup = ic_sup
+  )
+}
+
+integrar_idrgp_ano <- function(df_agr_ano, ano_ref, subprefeitura_sf, df_idrgp) {
+  df_agr_k <- df_agr_ano |>
+    mutate(
+      subprefeitura = str_squish(subprefeitura),
+      join_key = norm_name(subprefeitura)
+    )
+
+  df_integrado <- subprefeitura_sf |>
+    left_join(df_idrgp |> select(join_key, idrgp_alvo), by = "join_key") |>
+    left_join(df_agr_k  |> select(join_key, valor),     by = "join_key") |>
+    mutate(
+      valor = replace_na(valor, 0),
+      idrgp_alvo = replace_na(idrgp_alvo, 0)
+    )
+
+  total_valor <- sum(df_integrado$valor, na.rm = TRUE)
+
+  df_integrado <- df_integrado |>
+    mutate(
+      ano = as.integer(ano_ref),
+      idrgp_real      = if (total_valor > 0) valor / total_valor else NA_real_,
+      idrgp_diferenca = idrgp_real - idrgp_alvo,
+      idrgp_var_percentual = if_else(idrgp_alvo == 0, 0, idrgp_diferenca / idrgp_alvo),
+      valor_previsto  = total_valor * idrgp_alvo,
+      status_valor    = if_else(valor < valor_previsto,
+                                "Valor previsto (R$) nao atingido",
+                                "Valor previsto (R$) superado")
+    )
+
+  testes <- testar_idrgp(df_integrado)
+
+  df_integrado <- df_integrado |>
+    left_join(
+      testes$df_teste |> select(subprefeitura, status_var_percentual, status_estatistico),
+      by = "subprefeitura"
+    )
+
+  list(
+    ano = as.integer(ano_ref),
+    df_integrado = df_integrado,
+    df_teste = testes$df_teste,
+    total_valor = total_valor,
+    teste_ks = testes$teste_ks,
+    teste_principal = testes$teste_principal,
+    metodo = testes$metodo,
+    medida_central = testes$medida_central,
+    ic_inf = testes$ic_inf,
+    ic_sup = testes$ic_sup
+  )
+}
+```
+
+## Preparação (gera tudo em listas)
+
+Este chunk faz o â€œtrabalho pesadoâ€ uma única vez e guarda tudo em listas fáceis de usar.
+
+```
+
+```{r auditoria_df_reg_2025_25_DA, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# DIAGNÓSTICO DEFENSIVO: df_reg e reg_por_ano
+# ============================================================================
+
+cat("--- Auditoria de Integracao Final ---\n")
+
+if (exists("df_reg") && !is.null(df_reg)) {
+  cat("df_reg: ", nrow(df_reg), "linhas | colunas:", paste(names(df_reg), collapse=", "), "\n")
+  if ("ano" %in% names(df_reg)) {
+    print(table(df_reg$ano, useNA="always", dnn="Anos em df_reg"))
+  } else {
+    message("⚠️ Alerta: Coluna 'ano' ausente em df_reg.")
+  }
+} else {
+  message("ℹ️ df_reg nao encontrado ou vazio.")
+}
+
+if (exists("reg_por_ano")) {
+  cat("\nreg_por_ano chaves:", paste(names(reg_por_ano), collapse=", "), "\n")
+}
+```
+
+```{r prepara_listas, message=FALSE, warning=FALSE}
+# 1) Regionalização por ação, por ano
+df_reg <- purrr::imap_dfr(arquivos, function(arq, ano_chr) {
+  ano <- as.integer(ano_chr)
+  aba <- detectar_sheet(arq, ano)
+  resumo_regionalizacao(arq, ano, aba)
+})
+
+reg_por_ano <- split(df_reg, df_reg$ano)
+
+# 2) IDRGP por ano (teste + classificação)
+idrgp_por_ano <- purrr::imap(agrs_25_DA, function(df_agr_ano, ano_chr) {
+  integrar_idrgp_ano(df_agr_ano, as.integer(ano_chr), subprefeitura_sf, df_idrgp)
+})
+
+# (Opcional) expõe variáveis â€œamigáveisâ€ no ambiente: idrgp_2022, idrgp_2023...
+purrr::iwalk(idrgp_por_ano, function(res, ano_chr) {
+  assign(paste0("idrgp_", ano_chr), res, envir = .GlobalEnv)
+})
+```
+
+## (NOVO) Ações com regionalização > 70% (2025) — recorte `25_DA`
+
+Este bloco **reutiliza** a tabela anual de regionalização por ação já calculada (`reg_por_ano`),
+sem recalcular bases. O objetivo é isolar apenas as acoes cujo percentual de regionalização
+seja superior a **70%** em 2025 e exportar uma tabela rastreável.
+
+
+```{r conferencia_origem_25_DA, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# CONFERENCIA MINIMA DE ORIGEM E ESTRUTURA (25_DA)
+# ============================================================================
+
+cat("--- 1. Arquivos no Diretorio de Dados ---\n")
+if (exists("pasta_dados") && dir.exists(pasta_dados)) {
+  print(list.files(pasta_dados))
+} else {
+  message("⚠️ Diretorio 'pasta_dados' nao encontrado.")
+}
+
+cat("\n--- 2. Estrutura de basedadosDA_2025 ---\n")
+if (exists("basedadosDA_2025")) {
+  cat("Dimensoes:", dim(basedadosDA_2025), "\n")
+  cat("Colunas:", paste(names(basedadosDA_2025), collapse=", "), "\n")
+  print(head(basedadosDA_2025, 3))
+} else {
+  message("ℹ️ basedadosDA_2025 nao carregado.")
+}
+
+cat("\n--- 3. Estrutura de df_reg ---\n")
+if (exists("df_reg")) {
+  cat("Dimensoes:", dim(df_reg), "\n")
+  cat("Colunas disponiveis:", paste(names(df_reg), collapse=", "), "\n")
+  
+  # Verificacao explicita da coluna ano
+  cols_ano <- c("ano", "ano_exercicio", "exercicio", "ano_ref", "ano_base")
+  encontradas_ano <- intersect(cols_ano, names(df_reg))
+  
+  if (length(encontradas_ano) > 0) {
+    cat("✅ Colunas de ano encontradas:", paste(encontradas_ano, collapse=", "), "\n")
+  } else {
+    message("⚠️ ATENCAO: Nenhuma coluna de 'ano' (ou variantes) encontrada em df_reg.")
+  }
+} else {
+  message("ℹ️ df_reg nao encontrado.")
+}
+
+cat("\n--- 4. Estrutura de reg_por_ano ---\n")
+if (exists("reg_por_ano")) {
+  cat("Tipo:", class(reg_por_ano), "\n")
+  cat("Chaves (anos):", paste(names(reg_por_ano), collapse=", "), "\n")
+}
+```
+
+```{r acoes_regionalizacao_maior_70_2025_25_DA, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# 1) Tabela filtrada (2025) — percentual de regionalização > 70%
+# ============================================================================
+
+df_reg_2025_base_25_DA <- NULL
+
+# 1) Preferencia: `reg_por_ano[["2025"]]` (quando o split inclui o ano)
+if (exists("reg_por_ano")) {
+  df_reg_2025_base_25_DA <- reg_por_ano[[as.character(2025)]]
+}
+
+# 2) Fallback: filtra direto de `df_reg` (quando o split nao gerou a chave)
+if (is.null(df_reg_2025_base_25_DA) && exists("df_reg")) {
+  df_reg_2025_base_25_DA <- df_reg |>
+    dplyr::filter(as.integer(ano) == 2025)
+}
+
+# 3) Último fallback: recalcula SOMENTE 2025 (sem afetar os demais objetos)
+if (is.null(df_reg_2025_base_25_DA) || nrow(df_reg_2025_base_25_DA) == 0) {
+  cat("⚠️ `reg_por_ano[['2025']]` nao disponível/sem linhas; recalculando resumo de regionalização apenas para 2025.\n")
+  aba_2025 <- detectar_sheet(arquivo_2025, 2025)
+  df_reg_2025_base_25_DA <- resumo_regionalizacao(arquivo_2025, 2025, aba_2025)
+}
+
+if (is.null(df_reg_2025_base_25_DA) || nrow(df_reg_2025_base_25_DA) == 0) {
+  stop("Não foi possível obter a tabela de regionalização por ação para 2025 (25_DA).")
+}
+
+df_reg_2025_tratada_25_DA <- df_reg_2025_base_25_DA |>
+  dplyr::mutate(
+    descricao_proj_ativ = as.character(descricao_proj_ativ),
+    .desc = iconv(descricao_proj_ativ, from = "", to = "UTF-8", sub = ""),
+    .desc = stringr::str_replace_all(.desc, "[\u00a0\u200b\u200c\u200d\u200e\u200f\ufeff]", " "),
+    .desc = stringr::str_squish(.desc),
+    .m = stringr::str_match(
+      .desc,
+      paste0("^\\s*([0-9]{3,8})\\s*", regex_separador_codigo_acao_25_DA, "\\s*(.*)$")
+    ),
+    codigo_acao = padronizar_codigo_acao_25_DA(.m[, 2]),
+    acao = padronizar_acao_texto_25_DA(.m[, 3]),
+    percentual_regionalizacao = as.numeric(perc_regionalizado),
+    valor_liquidado = as.numeric(valor_total),
+    quantidade_subprefeituras_atendidas = as.integer(n_subpref),
+    classificacao_territorial_25_DA = dplyr::case_when(
+      percentual_regionalizacao > 0.70 ~ "acima_70pct",
+      TRUE ~ "ate_70pct"
+    )
+  ) |>
+  dplyr::select(
+    ano,
+    codigo_acao,
+    acao,
+    percentual_regionalizacao,
+    valor_liquidado,
+    valor_regionalizado,
+    quantidade_subprefeituras_atendidas,
+    classificacao_territorial_25_DA,
+    descricao_proj_ativ,
+    dplyr::everything()
+  ) |>
+  dplyr::filter(!is.na(percentual_regionalizacao))
+
+acoes_regionalizacao_maior_70_2025_25_DA <- df_reg_2025_tratada_25_DA |>
+  dplyr::filter(percentual_regionalizacao > 0.70) |>
+  dplyr::arrange(dplyr::desc(percentual_regionalizacao), dplyr::desc(valor_liquidado)) |>
+  dplyr::mutate(
+    percentual_regionalizacao = round(percentual_regionalizacao, 4),
+    valor_liquidado = round(valor_liquidado, 2),
+    valor_regionalizado = round(as.numeric(valor_regionalizado), 2)
+  )
+
+arq_xlsx_25_DA <- file.path(pasta_saida, "tabelas_25_DA", "acoes_regionalizacao_maior_70_2025_25_DA.xlsx")
+arq_csv_25_DA <- file.path(pasta_saida, "tabelas_25_DA", "acoes_regionalizacao_maior_70_2025_25_DA.csv")
+
+writexl::write_xlsx(acoes_regionalizacao_maior_70_2025_25_DA, path = arq_xlsx_25_DA)
+readr::write_csv(acoes_regionalizacao_maior_70_2025_25_DA, file = arq_csv_25_DA)
+
+cat("✅ Exportado: ", arq_xlsx_25_DA, "\n", sep = "")
+cat("✅ Exportado: ", arq_csv_25_DA, "\n", sep = "")
+```
+
+```{r analise_acoes_reg_maior_70_2025_25_DA, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+# ============================================================================
+# 2) Análise e visualização simples (2025) — regionalização > 70%
+# ============================================================================
+
+df_acoes70_25_DA <- acoes_regionalizacao_maior_70_2025_25_DA
+
+total_acoes_25_DA <- nrow(df_reg_2025_tratada_25_DA)
+total_valor_25_DA <- sum(df_reg_2025_tratada_25_DA$valor_liquidado, na.rm = TRUE)
+
+n_acoes70_25_DA <- nrow(df_acoes70_25_DA)
+valor_acoes70_25_DA <- sum(df_acoes70_25_DA$valor_liquidado, na.rm = TRUE)
+share_acoes70_25_DA <- if (total_valor_25_DA > 0) valor_acoes70_25_DA / total_valor_25_DA else NA_real_
+
+cat("### AÃ§ões com regionalização > 70% (2025)\n\n")
+
+knitr::kable(
+  tibble(
+    acoes_total_2025 = total_acoes_25_DA,
+    acoes_acima_70pct_2025 = n_acoes70_25_DA,
+    valor_total_2025 = total_valor_25_DA,
+    valor_acima_70pct_2025 = valor_acoes70_25_DA,
+    participacao_no_total_2025 = share_acoes70_25_DA
+  ) |>
+    dplyr::mutate(
+      valor_total_2025 = scales::label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total_2025),
+      valor_acima_70pct_2025 = scales::label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_acima_70pct_2025),
+      participacao_no_total_2025 = scales::label_percent(accuracy = 0.1)(participacao_no_total_2025)
+    ),
+  caption = "Resumo — AÃ§ões com regionalização > 70% (2025, recorte 25_DA)"
+) |> print()
+
+top15_25_DA <- df_acoes70_25_DA |>
+  dplyr::select(codigo_acao, acao, percentual_regionalizacao, valor_liquidado, quantidade_subprefeituras_atendidas) |>
+  dplyr::slice_head(n = 15)
+
+knitr::kable(
+  top15_25_DA |>
+    dplyr::mutate(
+      percentual_regionalizacao = scales::label_percent(accuracy = 0.1)(percentual_regionalizacao),
+      valor_liquidado = scales::label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_liquidado)
+    ),
+  caption = "Top 15 — AÃ§ões mais regionalizadas (>70%) em 2025 (25_DA)"
+) |> print()
+
+g1_25_DA <- top15_25_DA |>
+  dplyr::mutate(rotulo = paste0(codigo_acao, " - ", acao)) |>
+  ggplot2::ggplot(ggplot2::aes(x = stats::reorder(rotulo, percentual_regionalizacao), y = percentual_regionalizacao)) +
+  ggplot2::geom_col(fill = "#2C3E50") +
+  ggplot2::coord_flip() +
+  ggplot2::scale_y_continuous(labels = scales::label_percent(accuracy = 1)) +
+  ggplot2::labs(
+    title = "AÃ§ões com regionalização > 70% (2025) — Top 15",
+    x = NULL,
+    y = "% regionalização"
+  ) +
+  ggplot2::theme_minimal(base_family = "sans") +
+  ggplot2::theme(
+    plot.title = ggplot2::element_text(face = "bold"),
+    axis.text.y = ggplot2::element_text(size = 9)
+  )
+
+arq_graf_25_DA <- file.path(pasta_saida, "graficos_25_DA", "acoes_regionalizacao_maior_70_2025_top15_25_DA.png")
+ggplot2::ggsave(arq_graf_25_DA, g1_25_DA, width = 12, height = 8, dpi = 300)
+cat("\n✅ Gráfico exportado: `", arq_graf_25_DA, "`\n", sep = "")
+
+# Distribuição por subprefeitura (considerando apenas as acoes >70%)
+codigos70_25_DA <- df_acoes70_25_DA |>
+  dplyr::filter(!is.na(codigo_acao)) |>
+  dplyr::pull(codigo_acao) |>
+  unique()
+
+df_subpref70_25_DA <- df_2025_25_DA |>
+  dplyr::filter(codigo_acao %in% codigos70_25_DA) |>
+  dplyr::group_by(subprefeitura) |>
+  dplyr::summarise(
+    valor_liquidado = sum(valor_liquidado, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  dplyr::arrange(dplyr::desc(valor_liquidado))
+
+knitr::kable(
+  df_subpref70_25_DA |>
+    dplyr::slice_head(n = 10) |>
+    dplyr::mutate(valor_liquidado = scales::label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_liquidado)),
+  caption = "Top 10 — Subprefeituras por valor liquidado (acoes >70% regionalização, 2025, 25_DA)"
+) |> print()
+
+g2_25_DA <- df_subpref70_25_DA |>
+  dplyr::slice_head(n = 15) |>
+  ggplot2::ggplot(ggplot2::aes(x = stats::reorder(subprefeitura, valor_liquidado), y = valor_liquidado)) +
+  ggplot2::geom_col(fill = "#18BC9C") +
+  ggplot2::coord_flip() +
+  ggplot2::scale_y_continuous(labels = scales::label_number(big.mark=".", decimal.mark=",", prefix="R$ ")) +
+  ggplot2::labs(
+    title = "Distribuição por subprefeitura — acoes >70% (2025)",
+    x = NULL,
+    y = "Valor liquidado"
+  ) +
+  ggplot2::theme_minimal(base_family = "sans") +
+  ggplot2::theme(plot.title = ggplot2::element_text(face = "bold"))
+
+arq_graf2_25_DA <- file.path(pasta_saida, "graficos_25_DA", "acoes_regionalizacao_maior_70_2025_subpref_top15_25_DA.png")
+ggplot2::ggsave(arq_graf2_25_DA, g2_25_DA, width = 12, height = 8, dpi = 300)
+cat("✅ Gráfico exportado: `", arq_graf2_25_DA, "`\n", sep = "")
+```
+
+## Resumo geral da regionalização (por ano)
+
+```{r resumo_regionalizacao_ano, message=FALSE, warning=FALSE}
+resumo_reg_ano <- df_reg |>
+  group_by(ano) |>
+  summarise(
+    valor_total = sum(valor_total, na.rm = TRUE),
+    valor_regionalizado = sum(valor_regionalizado, na.rm = TRUE),
+    perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_),
+    .groups = "drop"
+  )
+
+knitr::kable(
+  resumo_reg_ano |>
+    mutate(
+      valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+      valor_regionalizado = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_regionalizado),
+      perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
+    ),
+  col.names = c("Ano","Valor total","Valor regionalizado","% regionalizado"),
+  caption = "Regionalização do orÃ§amento (por valor) — resumo por ano"
+)
+```
+
+## Análises de 2022 a 2025 (mesmo roteiro em cada ano)
+
+Para ficar **didático e replicável**, usamos:
+
+1) **Regionalização por ação** (tabela completa exportada para Excel)  
+2) **Teste estatístico do IDRGP** (KS + método + IC 95%)  
+3) **Classificação das subprefeituras** (estatística e variação percentual)
+
+```{r funcao_imprimir_ano, message=FALSE, warning=FALSE}
+imprimir_analise_ano <- function(ano) {
+  ano_chr <- as.character(ano)
+
+  # --- Regionalização (todas as acoes) ---
+  cat("### AÃ§ões regionalizadas (projeto/atividade)\n\n")
+  df_reg_ano <- reg_por_ano[[ano_chr]] |>
+    arrange(desc(valor_total))
+
+  write_xlsx(
+    df_reg_ano,
+    path = file.path(pasta_saida, "tabelas_25_DA", paste0("regionalizacao_acoes_", ano, "_25_DA.xlsx"))
+  )
+
+  cat(
+    "Tabela completa exportada em: `",
+    file.path(pasta_saida, "tabelas_25_DA", paste0("regionalizacao_acoes_", ano, "_25_DA.xlsx")),
+    "`\n\n",
+    sep = ""
+  )
+
+  resumo_ano <- df_reg_ano |>
+    summarise(
+      acoes = n(),
+      valor_total = sum(valor_total, na.rm = TRUE),
+      valor_regionalizado = sum(valor_regionalizado, na.rm = TRUE),
+      perc_regionalizado = if_else(valor_total > 0, valor_regionalizado / valor_total, NA_real_)
+    )
+
+  knitr::kable(
+    resumo_ano |>
+      mutate(
+        valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+        valor_regionalizado = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_regionalizado),
+        perc_regionalizado = label_percent(accuracy = 0.1)(perc_regionalizado)
+      ),
+    col.names = c("N acoes","Valor total","Valor regionalizado","% regionalizado"),
+    caption = paste0("Resumo da regionalização por ação — ", ano)
+  ) |> print()
+
+  top_nao_reg <- df_reg_ano |>
+    mutate(perc_nao_reg = 1 - perc_regionalizado) |>
+    filter(!is.na(perc_nao_reg)) |>
+    arrange(desc(perc_nao_reg), desc(valor_total)) |>
+    slice_head(n = 15) |>
+    mutate(
+      valor_total = label_number(big.mark=".", decimal.mark=",", prefix="R$ ")(valor_total),
+      perc_nao_reg = label_percent(accuracy = 0.1)(perc_nao_reg)
+    ) |>
+    select(descricao_proj_ativ, valor_total, perc_nao_reg, n_subpref)
+
+  knitr::kable(
+    top_nao_reg,
+    col.names = c("Projeto/atividade","Valor total","% nao regionalizado","N subpref (regionalizado)"),
+    caption = paste0("Top 15 acoes com menor regionalização (por valor) — ", ano)
+  ) |> print()
+
+  # --- IDRGP + testes ---
+  cat("\n### IDRGP e testes estatísticos\n\n")
+  res <- idrgp_por_ano[[ano_chr]]
+
+  cat(
+    "- Total do ano: R$ ", format(res$total_valor, big.mark = ".", decimal.mark = ","), "\n",
+    "- KS (normalidade): D = ", round(res$teste_ks$statistic, 4),
+    " | p = ", formatC(res$teste_ks$p.value, format = "e", digits = 3), "\n",
+    "- Método: ", toupper(res$metodo),
+    " | p = ", formatC(res$teste_principal$p.value, format = "e", digits = 2), "\n",
+    "- IC 95% (diferença real - alvo): [", round(res$ic_inf, 6), "; ", round(res$ic_sup, 6), "]\n\n",
+    sep = ""
+  )
+
+  dist_status <- res$df_teste |>
+    count(status_estatistico) |>
+    arrange(match(status_estatistico, c("Abaixo do IDRGP Alvo","Dentro do IDRGP Alvo","Acima do IDRGP Alvo")))
+
+  knitr::kable(
+    dist_status,
+    col.names = c("Status (IC 95%)", "N subprefeituras"),
+    caption = paste0("Classificação estatística (IC 95%) — ", ano)
+  ) |> print()
+}
+```
+
+## Análise de 2022
+
+```{r analise_2022, results='asis', message=FALSE, warning=FALSE}
+imprimir_analise_ano(2022)
+```
+
+## Análise de 2023
+
+```{r analise_2023, results='asis', message=FALSE, warning=FALSE}
+imprimir_analise_ano(2023)
+```
+
+## Análise de 2024
+
+```{r analise_2024, results='asis', message=FALSE, warning=FALSE}
+imprimir_analise_ano(2024)
+```
+
+## Análise de 2025
+
+```{r analise_2025, results='asis', message=FALSE, warning=FALSE}
+imprimir_analise_ano(2025)
+```
+
+## Consolidação histórica (2022—2025) + teste do ciclo
+
+Aqui consolidamos o **ciclo inteiro** e também aplicamos o mesmo teste estatístico no **acumulado 2022—2025**.
+
+```{r historico}
+# Para manter o relatório â€œcompatívelâ€ com os mapas/gráficos já montados,
+# definimos aqui os objetos do ano base (2025) a partir das listas.
+res_2025 <- idrgp_por_ano[["2025"]]
+df_integrado <- res_2025$df_integrado
+df_teste <- res_2025$df_teste
+teste_ks <- res_2025$teste_ks
+teste_principal <- res_2025$teste_principal
+metodo_estatistico <- res_2025$metodo
+medida_central <- res_2025$medida_central
+ic_inf <- res_2025$ic_inf
+ic_sup <- res_2025$ic_sup
+
+integrar_ano <- function(df_agr, ano_ref) {
+  df_agr |>
+    mutate(join_key = norm_name(subprefeitura)) |>
+    left_join(df_idrgp |> select(join_key, idrgp_alvo), by = "join_key") |>
+    mutate(
+      valor = replace_na(valor, 0),
+      idrgp_alvo = replace_na(idrgp_alvo, 0),
+      total = sum(valor, na.rm = TRUE),
+      idrgp_real = if_else(total > 0, valor / total, 0),
+      idrgp_diferenca = idrgp_real - idrgp_alvo,
+      idrgp_var_percentual = if_else(idrgp_alvo == 0, 0, idrgp_diferenca / idrgp_alvo),
+      status = case_when(
+        idrgp_var_percentual >  0.3  ~ "Acima do IDRGP Alvo",
+        idrgp_var_percentual < -0.3  ~ "Abaixo do IDRGP Alvo",
+        TRUE ~ "Dentro do IDRGP Alvo"
+      ),
+      ano = ano_ref
+    ) |>
+    select(-total)
+}
+
+int_2022 <- integrar_ano(df_agr_2022_25_DA, 2022)
+int_2023 <- integrar_ano(df_agr_2023_25_DA, 2023)
+int_2024 <- integrar_ano(df_agr_2024_25_DA, 2024)
+int_2025 <- res_2025$df_integrado |>
+  st_drop_geometry() |>
+  select(subprefeitura, join_key, valor, idrgp_alvo, idrgp_real,
+         idrgp_diferenca, idrgp_var_percentual, status = status_estatistico) |>
+  mutate(ano = 2025)
+
+df_longo <- bind_rows(int_2022, int_2023, int_2024, int_2025) |>
+  mutate(ano = as.factor(ano))
+
+df_ciclo <- df_longo |>
+  group_by(subprefeitura) |>
+  summarise(
+    idrgp_alvo = first(idrgp_alvo),
+    valor_2022 = sum(valor[ano == "2022"], na.rm = TRUE),
+    valor_2023 = sum(valor[ano == "2023"], na.rm = TRUE),
+    valor_2024 = sum(valor[ano == "2024"], na.rm = TRUE),
+    valor_2025 = sum(valor[ano == "2025"], na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    valor_2022_a_2025 = valor_2022 + valor_2023 + valor_2024 + valor_2025,
+    idrgp_real_2022_a_2025 = valor_2022_a_2025 / sum(valor_2022_a_2025),
+    idrgp_diferenca_ciclo = idrgp_real_2022_a_2025 - idrgp_alvo,
+    idrgp_var_pct_ciclo = if_else(idrgp_alvo == 0, 0,
+      (idrgp_real_2022_a_2025 - idrgp_alvo) / idrgp_alvo),
+    status_ciclo = case_when(
+      idrgp_var_pct_ciclo >  0.3  ~ "Acima do IDRGP Alvo",
+      idrgp_var_pct_ciclo < -0.3  ~ "Abaixo do IDRGP Alvo",
+      TRUE ~ "Dentro do IDRGP Alvo"
+    )
+  )
+
+# === Teste estatístico no ciclo (pedido no código) ===
+vetor_ciclo_z <- scale(df_ciclo$idrgp_diferenca_ciclo)[, 1]
+teste_ks_ciclo <- ks.test(vetor_ciclo_z, "pnorm")
+
+if (teste_ks_ciclo$p.value <= 0.05) {
+  metodo_estatistico_ciclo <- "wilcoxon"
+  teste_principal_ciclo <- wilcox.test(
+    df_ciclo$idrgp_real_2022_a_2025, df_ciclo$idrgp_alvo,
+    paired = TRUE, conf.int = TRUE, conf.level = 0.95, exact = FALSE
+  )
+} else {
+  metodo_estatistico_ciclo <- "t_pareado"
+  teste_principal_ciclo <- t.test(
+    df_ciclo$idrgp_real_2022_a_2025, df_ciclo$idrgp_alvo,
+    paired = TRUE, conf.level = 0.95
+  )
+}
+
+ic_inf_ciclo <- teste_principal_ciclo$conf.int[1]
+ic_sup_ciclo <- teste_principal_ciclo$conf.int[2]
+
+df_ciclo <- df_ciclo |>
+  mutate(
+    status_ciclo_estatistico = case_when(
+      idrgp_diferenca_ciclo < ic_inf_ciclo ~ "Abaixo do IDRGP Alvo",
+      idrgp_diferenca_ciclo > ic_sup_ciclo ~ "Acima do IDRGP Alvo",
+      TRUE ~ "Dentro do IDRGP Alvo"
+    )
+  )
+
+df_ciclo_sf <- subprefeitura_sf |>
+  left_join(df_ciclo |> mutate(join_key = norm_name(subprefeitura)), by = "join_key")
+
+cat("✅ Consolidação histórica concluída.\n")
+cat("✅ Teste do ciclo:", toupper(metodo_estatistico_ciclo),
+    "| KS p =", formatC(teste_ks_ciclo$p.value, format="e", digits=2),
+    "| IC 95% [", round(ic_inf_ciclo, 6), ";", round(ic_sup_ciclo, 6), "]\n")
+```
+
+# Mapas
+
+```{r config_mapas}
+cores_status <- c(
+  "Abaixo do IDRGP Alvo" = "#d97a0f",
+  "Dentro do IDRGP Alvo" = "#0ea1cf",
+  "Acima do IDRGP Alvo"  = "#1A1442"
+)
+
+tema_mapa <- theme_void(base_size = 12) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 14, hjust = 0),
+    plot.subtitle = element_text(size = 10, hjust = 0),
+    plot.caption  = element_text(size = 7, hjust = 0),
+    plot.title.position = "plot", plot.caption.position = "plot",
+    plot.margin   = margin(10, 10, 10, 10),
+    legend.position = "right",
+    legend.title  = element_text(size = 9),
+    legend.text   = element_text(size = 8)
+  )
+
+caption_base <- "Elaboração: SEPLAN/CPMA.\nFonte: Secretaria Municipal de Planejamento e Eficiência"
+
+gerar_mapa <- function(sf_data, col_status, titulo, nota = "") {
+  ggplot(sf_data) +
+    geom_sf(aes(fill = .data[[col_status]]), color = "white", linewidth = 0.3) +
+    geom_sf_text(aes(label = sigla), color = "white", size = 2.2, fontface = "bold") +
+    scale_fill_manual(values = cores_status, name = "Status IDRGP", na.value = "grey80") +
+    labs(
+      title = titulo,
+      subtitle = "Classificação de cada subprefeitura em relação ao IDRGP Alvo",
+      caption = paste0(caption_base, "\n", nota)
+    ) +
+    tema_mapa
+}
+```
+
+## Mapas 2022—2024
+
+```{r mapas_hist, fig.width=12, fig.height=10}
+preparar_sf <- function(int_data) {
+  subprefeitura_sf |>
+    left_join(int_data |> select(join_key, status), by = "join_key")
+}
+
+mapa1 <- gerar_mapa(preparar_sf(int_2022), "status",
+  "IDRGP 2022 — Status quanto ao IDRGP Alvo", "Variação percentual (Â±30%).")
+mapa2 <- gerar_mapa(preparar_sf(int_2023), "status",
+  "IDRGP 2023 — Status quanto ao IDRGP Alvo", "Variação percentual (Â±30%).")
+mapa3 <- gerar_mapa(preparar_sf(int_2024), "status",
+  "IDRGP 2024 — Status quanto ao IDRGP Alvo", "Variação percentual (Â±30%).")
+
+print(mapa1); print(mapa2); print(mapa3)
+```
+
+## Mapa 2025
+
+```{r mapa_2025, fig.width=12, fig.height=10}
+mapa4 <- gerar_mapa(df_integrado, "status_estatistico",
+  "IDRGP 2025 — Status quanto ao IDRGP Alvo",
+  paste0("IC do teste ", toupper(metodo_estatistico),
+         " (95%): [", round(ic_inf, 5), "; ", round(ic_sup, 5), "]."))
+print(mapa4)
+```
+
+## Mapa Agregado 2022—2025
+
+```{r mapa_ciclo, fig.width=12, fig.height=10}
+mapa5 <- gerar_mapa(df_ciclo_sf, "status_ciclo_estatistico",
+  "IDRGP Agregado 2022—2025 — BalanÃ§o do Ciclo PPA",
+  paste0("Teste no ciclo: ", toupper(metodo_estatistico_ciclo),
+         " | IC 95%: [", round(ic_inf_ciclo, 5), "; ", round(ic_sup_ciclo, 5), "]."))
+print(mapa5)
+cat("✅ 5 mapas gerados.\n")
+```
+
+# Gráficos
+
+```{r tema_graficos}
+tema_barras <- theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    plot.title.position = "plot",
+    plot.caption.position = "plot",
+    plot.title    = element_text(face = "bold", size = 13),
+    plot.subtitle = element_text(size = 10),
+    plot.caption  = element_text(size = 7, hjust = 0),
+    axis.text.y   = element_text(size = 8)
+  )
+```
+
+## G1 — IDRGP 2025: Alvo vs. Real (%)
+
+```{r grafico1, fig.width=14, fig.height=12}
+grafico1 <- ggplot(df_integrado, aes(y = reorder(subprefeitura, idrgp_alvo))) +
+  geom_col(aes(x = idrgp_real, fill = status_estatistico), width = 0.65, alpha = 0.9) +
+  geom_point(aes(x = idrgp_alvo, shape = "IDRGP Alvo"), color = "#c0392b", size = 3) +
+  scale_fill_manual(values = cores_status, name = "Status:") +
+  scale_shape_manual(values = c("IDRGP Alvo" = 18), name = "") +
+  guides(
+    fill = guide_legend(order = 1),
+    shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)
+  ) +
+  scale_x_continuous(labels = scales::label_percent(accuracy = 0.1)) +
+  labs(
+    title = "IDRGP 2025 — Distribuição Percentual do Gasto por Subprefeitura",
+    subtitle = "IDRGP Real (barras) e IDRGP Alvo (losango)",
+    x = "IDRGP (%)", y = NULL,
+    caption = paste0(
+      caption_base,
+      "\nTeste: ", toupper(metodo_estatistico),
+      " | p = ", formatC(teste_principal$p.value, format = "e", digits = 2)
+    )
+  ) +
+  tema_barras
+
+print(grafico1)
+```
+
+## G2 — IDRGP Agregado 2022—2025 (%)
+
+```{r grafico2, fig.width=14, fig.height=12}
+grafico2 <- ggplot(df_ciclo, aes(y = reorder(subprefeitura, idrgp_alvo))) +
+  geom_col(aes(x = idrgp_real_2022_a_2025, fill = status_ciclo_estatistico), width = 0.65, alpha = 0.9) +
+  geom_point(aes(x = idrgp_alvo, shape = "IDRGP Alvo"), color = "#c0392b", size = 3) +
+  scale_fill_manual(values = cores_status, name = "Status:", limits = names(cores_status)) +
+  scale_shape_manual(values = c("IDRGP Alvo" = 18), name = "") +
+  guides(
+    fill = guide_legend(order = 1),
+    shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)
+  ) +
+  scale_x_continuous(labels = scales::label_percent(accuracy = 0.1)) +
+  labs(
+    title = "IDRGP 2022—2025 — BalanÃ§o do Ciclo PPA (Distribuição Percentual)",
+    subtitle = "IDRGP Real acumulado (barras) e IDRGP Alvo (losango)",
+    x = "IDRGP Acumulado (%)", y = NULL,
+    caption = paste0(
+      caption_base,
+      "\nTeste no ciclo: ", toupper(metodo_estatistico_ciclo),
+      " | p = ", formatC(teste_principal_ciclo$p.value, format = "e", digits = 2)
+    )
+  ) +
+  tema_barras
+
+print(grafico2)
+```
+
+## G3 — IDRGP 2025: Valores Absolutos (R$)
+
+```{r grafico3, fig.width=14, fig.height=12}
+grafico3 <- ggplot(df_integrado, aes(y = reorder(subprefeitura, idrgp_alvo))) +
+  geom_col(aes(x = valor, fill = status_valor), width = 0.65, alpha = 0.9) +
+  geom_point(aes(x = valor_previsto, shape = "Valor Previsto (R$)"),
+             color = "#c0392b", size = 3) +
+  scale_fill_manual(values = c(
+    "Valor previsto (R$) superado"     = "#1A1442",
+    "Valor previsto (R$) nao atingido" = "#d97a0f"
+  ), name = "Status:") +
+  scale_shape_manual(values = c("Valor Previsto (R$)" = 18), name = "") +
+  guides(
+    fill = guide_legend(order = 1),
+    shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)
+  ) +
+  scale_x_continuous(labels = scales::label_number(
+    scale_cut = scales::cut_short_scale(),
+    prefix = "R$ ",
+    decimal.mark = ","
+  )) +
+  labs(
+    title = "IDRGP 2025 — Valor Previsto e Executado por Subprefeitura (R$)",
+    x = "Valor executado (R$)", y = NULL,
+    caption = caption_base
+  ) +
+  tema_barras
+
+print(grafico3)
+```
+
+## G4 — IDRGP 2022—2025: Série Histórica (R$)
+
+```{r grafico4, fig.width=14, fig.height=12}
+df_longo_plot <- df_longo |>
+  mutate(
+    subprefeitura = factor(subprefeitura,
+      levels = df_ciclo |> arrange(idrgp_alvo) |> pull(subprefeitura)
+    ),
+    ano = factor(ano, levels = c("2022","2023","2024","2025"))
+  )
+
+valor_previsto_ciclo <- sum(df_ciclo$valor_2022_a_2025)
+
+grafico4 <- ggplot(df_longo_plot, aes(y = subprefeitura, x = valor, fill = ano)) +
+  geom_col(width = 0.65, alpha = 0.9, position = "stack") +
+  geom_point(
+    data = df_ciclo |>
+      mutate(
+        subprefeitura = factor(subprefeitura, levels = levels(df_longo_plot$subprefeitura)),
+        valor_prev = idrgp_alvo * valor_previsto_ciclo
+      ),
+    aes(y = subprefeitura, x = valor_prev, shape = "Valor Previsto Ciclo"),
+    shape = 23, fill = "white", color = "#c0392b", stroke = 1.1, size = 3.2,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(values = c(
+    "2022" = "#9BD7EA", "2023" = "#4CB7D8",
+    "2024" = "#1F78B4", "2025" = "#0B3C6D"
+  ), name = "Ano") +
+  scale_x_continuous(labels = scales::label_number(
+    scale_cut = scales::cut_short_scale(), prefix = "R$ ", decimal.mark = ","
+  )) +
+  labs(
+    title = "IDRGP 2022—2025 — Evolução do Gasto Real por Subprefeitura (R$)",
+    subtitle = "Barras empilhadas por ano | Losango: valor previsto total do ciclo",
+    x = "Valor executado acumulado (R$)", y = NULL,
+    caption = caption_base
+  ) +
+  tema_barras
+
+print(grafico4)
+cat("✅ 4 gráficos gerados.\n")
+```
+
+# Exportação e Anexos
+
+## Tabela de anexos (2025)
+
+Detalhamento do valor liquidado por **projeto/atividade** em cada subprefeitura — apenas para o ano de **2025**.
+
+```{r anexos, echo=FALSE, message=FALSE, warning=FALSE}
+df_anexo <- df_2025_25_DA |>
+  group_by(subprefeitura, descricao_proj_ativ) |>
+  summarise(valor_liquidado = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") |>
+  rename(projeto_atividade = descricao_proj_ativ) |>
+  arrange(subprefeitura, projeto_atividade)
+
+cat("Subprefeituras em df_anexo:", n_distinct(df_anexo$subprefeitura), "\n")
+cat("Valor total:", format(sum(df_anexo$valor_liquidado), big.mark = ".", decimal.mark = ","), "\n")
+```
+
+## Tabelas 2022—2025 (Top 10 por subprefeitura e por órgÃ£o)
+
+```{r tabelas_ppa}
+gasto_reg <- bind_rows(df_2022_25_DA, df_2023_25_DA, df_2024_25_DA, df_2025_25_DA) |>
+  group_by(subprefeitura, descricao_proj_ativ) |>
+  summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop")
+
+tabela_gasto_sub <- gasto_reg |>
+  group_by(subprefeitura) |>
+  slice_max(order_by = valor, n = 10, with_ties = FALSE) |>
+  arrange(subprefeitura, desc(valor))
+
+# Se a coluna `sigla_orgao` nao existir na base, a tabela por órgÃ£o é pulada.
+if ("sigla_orgao" %in% names(df_2022_25_DA)) {
+  gasto_orgao_reg <- bind_rows(df_2022_25_DA, df_2023_25_DA, df_2024_25_DA, df_2025_25_DA) |>
+    group_by(subprefeitura, sigla_orgao) |>
+    summarise(valor = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") |>
+    group_by(subprefeitura) |>
+    mutate(
+      total_subpref = sum(valor),
+      percentual = if_else(total_subpref > 0, (valor / total_subpref) * 100, 0),
+      percentual = round(percentual, 2)
+    ) |>
+    ungroup()
+
+  graf_orgao_sub <- gasto_orgao_reg |>
+    mutate(sigla_orgao = if_else(percentual < 4, "Outros", sigla_orgao)) |>
+    group_by(subprefeitura, sigla_orgao) |>
+    summarise(valor = sum(valor), .groups = "drop") |>
+    group_by(subprefeitura) |>
+    mutate(
+      total_subpref = sum(valor),
+      percentual = if_else(total_subpref > 0, (valor / total_subpref) * 100, 0),
+      percentual = round(percentual, 2)
+    ) |>
+    ungroup()
+} else {
+  warning("Coluna `sigla_orgao` nao encontrada nas bases; tabela por órgÃ£o nao será gerada.")
+  gasto_orgao_reg <- tibble()
+  graf_orgao_sub <- tibble()
+}
+```
+
+## Exportação de mapas e gráficos
+
+```{r exporta_png}
+# Mapas (300 dpi)
+ggsave(file.path(pasta_saida, "mapas_25_DA", "mapa1_idrgp_2022_25_DA.png"), mapa1, width = 12, height = 10, dpi = 300)
+ggsave(file.path(pasta_saida, "mapas_25_DA", "mapa2_idrgp_2023_25_DA.png"), mapa2, width = 12, height = 10, dpi = 300)
+ggsave(file.path(pasta_saida, "mapas_25_DA", "mapa3_idrgp_2024_25_DA.png"), mapa3, width = 12, height = 10, dpi = 300)
+ggsave(file.path(pasta_saida, "mapas_25_DA", "mapa4_idrgp_2025_25_DA.png"), mapa4, width = 12, height = 10, dpi = 300)
+ggsave(file.path(pasta_saida, "mapas_25_DA", "mapa5_idrgp_agregado_2022_2025_25_DA.png"), mapa5, width = 12, height = 10, dpi = 300)
+
+# Gráficos (300 dpi)
+ggsave(file.path(pasta_saida, "graficos_25_DA", "grafico1_idrgp_2025_pct_25_DA.png"), grafico1, width = 14, height = 12, dpi = 300)
+ggsave(file.path(pasta_saida, "graficos_25_DA", "grafico2_idrgp_agregado_pct_25_DA.png"), grafico2, width = 14, height = 12, dpi = 300)
+ggsave(file.path(pasta_saida, "graficos_25_DA", "grafico3_idrgp_2025_reais_25_DA.png"), grafico3, width = 14, height = 12, dpi = 300)
+ggsave(file.path(pasta_saida, "graficos_25_DA", "grafico4_serie_2022_2025_25_DA.png"), grafico4, width = 14, height = 12, dpi = 300)
+
+cat("✅ Mapas e gráficos exportados.\n")
+```
+
+## Exportação de dados em Excel
+
+```{r exporta_xlsx}
+write_xlsx(
+  df_integrado |> st_drop_geometry() |> select(-any_of("join_key")),
+  path = file.path(pasta_saida, "tabelas_25_DA", "df_integrado_2025_25_DA.xlsx")
+)
+
+write_xlsx(df_ciclo, path = file.path(pasta_saida, "tabelas_25_DA", "df_ciclo_2022_2025_25_DA.xlsx"))
+
+write_xlsx(
+  df_longo,
+  path = file.path(pasta_saida, "tabelas_25_DA", "df_longo_2022_2025_25_DA.xlsx")
+)
+
+# df_anexo_2025.xlsx com 32 abas (1 por subprefeitura)
+sheet_names_anexo <- df_siglas$subprefeitura |>
+  str_replace_all("[\\\\/\\?\\*\\[\\]:]", "-") |>
+  str_squish() |>
+  str_trunc(width = 31, side = "right", ellipsis = "")
+
+sheet_names_anexo <- make.unique(sheet_names_anexo, sep = "_")
+
+abas_anexo_2025 <- purrr::map(
+  df_siglas$subprefeitura,
+  \(sp) df_anexo |> filter(subprefeitura == sp)
+)
+
+abas_anexo_2025 <- rlang::set_names(abas_anexo_2025, sheet_names_anexo)
+
+write_xlsx(abas_anexo_2025, path = file.path(pasta_saida, "tabelas_25_DA", "df_anexo_2025_25_DA.xlsx"))
+
+write_xlsx(
+  tibble(
+    metodo_2025 = metodo_estatistico,
+    p_valor_2025 = teste_principal$p.value,
+    estimativa_central_2025 = medida_central,
+    ic_inferior_95pct_2025 = ic_inf,
+    ic_superior_95pct_2025 = ic_sup,
+    ks_D_2025 = unname(teste_ks$statistic),
+    ks_p_2025 = teste_ks$p.value,
+    n_2025 = nrow(df_teste),
+    metodo_ciclo = metodo_estatistico_ciclo,
+    p_valor_ciclo = teste_principal_ciclo$p.value,
+    ic_inferior_95pct_ciclo = ic_inf_ciclo,
+    ic_superior_95pct_ciclo = ic_sup_ciclo,
+    ks_D_ciclo = unname(teste_ks_ciclo$statistic),
+    ks_p_ciclo = teste_ks_ciclo$p.value,
+    n_ciclo = nrow(df_ciclo)
+  ),
+  path = file.path(pasta_saida, "tabelas_25_DA", "tabelas_testes_estatisticos_25_DA.xlsx")
+)
+
+cat("✅ Planilhas exportadas.\n")
+```
+
+## Exportação geoespacial
+
+```{r exporta_geo}
+gpkg_2025 <- file.path(pasta_saida, "mapas_25_DA", "idrgp_2025_25_DA.gpkg")
+if (file.exists(gpkg_2025)) file.remove(gpkg_2025)
+st_write(
+  df_integrado |> select(-any_of("join_key")),
+  dsn = gpkg_2025,
+  layer = "idrgp_2025",
+  delete_dsn = FALSE
+)
+
+gpkg_ciclo <- file.path(pasta_saida, "mapas_25_DA", "idrgp_ciclo_2022_2025_25_DA.gpkg")
+if (file.exists(gpkg_ciclo)) file.remove(gpkg_ciclo)
+st_write(
+  df_ciclo_sf |> select(-any_of(c("join_key", "subprefeitura.y"))),
+  dsn = gpkg_ciclo,
+  layer = "idrgp_ciclo",
+  delete_dsn = FALSE
+)
+
+cat("✅ Arquivos geoespaciais exportados.\n")
+```
+
+## Mapas de localização (Subprefeituras) + Tabela/Gráfico (AÃ§ões Regionalizadas)
+
+### Mapas de localização das 32 subprefeituras
+
+```{r mapas_localizacao_subprefeituras, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# MAPAS DE LOCALIZACAO — 32 Subprefeituras (enquadramento global fixo)
+# Regras críticas:
+# - Join determinístico: distrito -> subprefeitura pela regra do centroide
+# - Sem duplicatas de distritos após join
+# - CRS único (WGS84 / EPSG:4326) e reaproveitado
+# - Ordem das camadas do ggplot é mandatória (ver requisitos)
+# ============================================================================
+
+# 0) S2 OFF no início e garantia de S2 ON ao final (mesmo em caso de erro)
+sf::sf_use_s2(FALSE)
+on.exit(sf::sf_use_s2(TRUE), add = TRUE)
+
+# 1) Estrutura de pastas e arquivos ------------------------------------------------
+pasta_mapas_individuais <- file.path(pasta_saida, "mapas_25_DA", "mapas_subprefeituras")
+if (!dir.exists(pasta_mapas_individuais)) dir.create(pasta_mapas_individuais, recursive = TRUE)
+
+# Shapefile de distritos (obrigatório)
+arquivo_distritos <- achar_arquivo(c("distrito_municipal_v2.shp"), pasta_dados)
+if (is.na(arquivo_distritos) || !file.exists(arquivo_distritos)) {
+  # Fallbacks comuns do repositório (mantém execução sem depender de copiar arquivos)
+  candidatos_extra <- c(
+    file.path("data_center", "distrito_municipal_v2.shp"),
+    file.path("R Markdown", "dados", "distrito_municipal_v2.shp")
+  )
+  for (p in candidatos_extra) {
+    if (file.exists(p)) {
+      arquivo_distritos <- p
+      break
+    }
+  }
+}
+if (is.na(arquivo_distritos) || !file.exists(arquivo_distritos)) {
+  stop(
+    "Shapefile de distritos nao encontrado: distrito_municipal_v2.shp.\n",
+    "Verifique a pasta de dados (pasta_dados = ", pasta_dados, ")."
+  )
+}
+
+# Shapefile de subprefeituras:
+# - se já existir `subprefeitura_sf` (carregado anteriormente), reutiliza
+# - senao, tenta ler de `arquivo_shp`
+if (!exists("subprefeitura_sf")) {
+  if (!exists("arquivo_shp") || is.na(arquivo_shp) || !file.exists(arquivo_shp)) {
+    stop("Objeto `subprefeitura_sf` nao existe e `arquivo_shp` nao está disponível/válido.")
+  }
+  subprefeitura_sf <- sf::read_sf(arquivo_shp) |>
+    janitor::clean_names() |>
+    sf::st_make_valid()
+}
+
+# 2) Normalização e CRS único (WGS84) --------------------------------------------
+# Observação: transformamos uma única vez e reaproveitamos nos filtros e no plot.
+todas_subprefs <- subprefeitura_sf |>
+  janitor::clean_names() |>
+  sf::st_make_valid() |>
+  sf::st_transform(4326) |>
+  dplyr::select(dplyr::any_of(c("sigla", "subprefeitura", "join_key")), geometry)
+
+distritos_sf <- sf::read_sf(arquivo_distritos) |>
+  janitor::clean_names() |>
+  sf::st_make_valid() |>
+  sf::st_transform(4326)
+
+# 2.1) Coluna de ID único de distrito (para garantir distinct determinístico)
+col_id_distrito <- intersect(
+  names(distritos_sf),
+  c("cd_distrito", "cd_dist", "cd_distr", "cod_distrito", "cod_dist", "id_distrito", "id_dist", "codigo_distrito")
+)[1]
+
+if (is.na(col_id_distrito) || length(col_id_distrito) == 0) {
+  warning(
+    "Não foi encontrada uma coluna padrÃ£o de código único de distrito. ",
+    "Criando `cd_distrito_tmp` por ordem de linha."
+  )
+  distritos_sf <- distritos_sf |>
+    dplyr::mutate(cd_distrito_tmp = dplyr::row_number())
+  col_id_distrito <- "cd_distrito_tmp"
+}
+
+# 2.2) Join espacial determinístico (CRÃTICO) -------------------------------------
+# Regra:
+# - centroides dos distritos
+# - st_join(centroides, subprefeituras, st_within)
+# - fallback: st_nearest_feature para centroides com NA
+distritos_cent <- distritos_sf |>
+  sf::st_centroid()
+
+cent_join <- sf::st_join(
+  distritos_cent,
+  todas_subprefs |>
+    dplyr::select(subprefeitura_geo = subprefeitura, sigla_geo = sigla),
+  join = sf::st_within,
+  left = TRUE
+)
+
+# Garantia extra de determinismo: se, por algum motivo, um centroide cair em mais de
+# uma geometria, escolhemos sempre a 1Âª ocorrência após ordenação estável.
+cent_join <- cent_join |>
+  dplyr::arrange(.data[[col_id_distrito]], dplyr::desc(!is.na(subprefeitura_geo)), subprefeitura_geo) |>
+  dplyr::group_by(.data[[col_id_distrito]]) |>
+  dplyr::slice_head(n = 1) |>
+  dplyr::ungroup()
+
+idx_na <- which(is.na(cent_join$subprefeitura_geo))
+if (length(idx_na) > 0) {
+  idx_near <- sf::st_nearest_feature(cent_join[idx_na, ], todas_subprefs)
+  cent_join$subprefeitura_geo[idx_na] <- todas_subprefs$subprefeitura[idx_near]
+  cent_join$sigla_geo[idx_na] <- todas_subprefs$sigla[idx_near]
+}
+
+# Anexamos o resultado do join (por ID do distrito) aos polígonos.
+lookup_sp <- cent_join |>
+  sf::st_drop_geometry() |>
+  dplyr::select(
+    id_distrito = .data[[col_id_distrito]],
+    subprefeitura_geo,
+    sigla_geo
+  ) |>
+  dplyr::distinct(id_distrito, .keep_all = TRUE)
+
+distritos_sf <- distritos_sf |>
+  dplyr::mutate(id_distrito = .data[[col_id_distrito]]) |>
+  dplyr::left_join(lookup_sp, by = "id_distrito") |>
+  dplyr::distinct(id_distrito, .keep_all = TRUE)
+
+if (nrow(distritos_sf) != nrow(dplyr::distinct(distritos_sf, id_distrito))) {
+  stop("Persistiram duplicatas de distritos após o join. Verifique a coluna de ID único.")
+}
+
+# 2.3) Perfil sem geometria --------------------------------------------------------
+if (!exists("df_integrado")) {
+  stop("Objeto `df_integrado` nao encontrado. Gere/importe o dataframe integrado antes deste chunk.")
+}
+
+df_perfil <- df_integrado |>
+  sf::st_drop_geometry() |>
+  dplyr::select(
+    subprefeitura,
+    sigla,
+    populacao,
+    valor_2025 = valor,
+    idrgp_alvo,
+    idrgp_real,
+    status = status_estatistico
+  )
+
+# 2.4) BBox global do município (fixo para todos os mapas) -------------------------
+bbox_sp <- sf::st_bbox(todas_subprefs)
+
+# 3) Paleta de cores por status ---------------------------------------------------
+# Se já existir no relatório, reaproveita; senao, cria aqui.
+if (!exists("cores_status")) {
+  cores_status <- c(
+    "Abaixo do IDRGP Alvo" = "#d97a0f",
+    "Dentro do IDRGP Alvo" = "#0ea1cf",
+    "Acima do IDRGP Alvo"  = "#1A1442"
+  )
+}
+
+# 4) Função principal: gera um ggplot por subprefeitura ----------------------------
+gerar_mapa_subpref <- function(nome_sp) {
+  # 4.1) Filtros internos
+  subpref_ativa <- todas_subprefs |> dplyr::filter(subprefeitura == nome_sp)
+  distritos_internos <- distritos_sf |> dplyr::filter(subprefeitura_geo == nome_sp)
+  row_perfil <- df_perfil |> dplyr::filter(subprefeitura == nome_sp)
+
+  if (nrow(row_perfil) != 1) {
+    stop("Perfil nao encontrado (ou duplicado) para a subprefeitura: ", nome_sp)
+  }
+
+  cor_sp <- unname(cores_status[row_perfil$status])
+  if (is.na(cor_sp)) {
+    cor_sp <- "#FF00FF" # fallback chamativo para diagnosticar status nao mapeado
+    warning("Status sem cor na paleta (cores_status) para: ", nome_sp, " | status = ", row_perfil$status)
+  }
+
+  sigla_sp <- row_perfil$sigla
+
+  # 4.2) Coluna de rótulo dos distritos (ordem mandatória)
+  col_label <- NULL
+  if ("sg_distrito_municipal" %in% names(distritos_internos)) {
+    col_label <- "sg_distrito_municipal"
+  } else {
+    candidatos <- c("sigla", "nm_distrito", "nm_distr", "distrito", "nome")
+    achada <- intersect(names(distritos_internos), candidatos)[1]
+    if (!is.na(achada) && length(achada) > 0) col_label <- achada
+  }
+
+  if (is.null(col_label)) {
+    warning("Nenhuma coluna de rótulo de distrito encontrada para ", nome_sp, ". Mapa sairá sem rótulos de distrito.")
+  }
+
+  # 4.3) Camadas do ggplot (ordem exata e mandatória) -----------------------------
+  p <- ggplot2::ggplot() +
+    # 1) Fundo do município (cinza denso, sem bordas)
+    ggplot2::geom_sf(data = todas_subprefs, fill = "#B0B0B0", color = NA) +
+    # 2) Borda externa do município (contorno SP)
+    ggplot2::geom_sf(data = sf::st_union(todas_subprefs), fill = NA, color = "gray30", linewidth = 0.6) +
+    # 3) Siglas de todas as subprefeituras
+    ggplot2::geom_sf_text(
+      data = todas_subprefs,
+      ggplot2::aes(label = sigla),
+      size = 2.8, color = "gray20", fontface = "bold"
+    ) +
+    # 4) Preenchimento da subprefeitura ativa (cor do status, sem borda)
+    ggplot2::geom_sf(data = subpref_ativa, fill = cor_sp, color = NA, alpha = 0.9) +
+    # 5) Limites dos distritos internos (tracejado sutil)
+    ggplot2::geom_sf(data = distritos_internos, fill = NA, color = "gray75", linetype = "dashed", linewidth = 0.35) +
+    # 6) Rótulos dos distritos internos (com check_overlap = TRUE)
+    {
+      if (!is.null(col_label)) {
+        ggplot2::geom_sf_text(
+          data = distritos_internos,
+          ggplot2::aes(label = .data[[col_label]]),
+          size = 2, color = "gray30", check_overlap = TRUE
+        )
+      }
+    } +
+    # Tema e textos
+    ggplot2::labs(
+      title = paste0("Subprefeitura ", nome_sp, " (", sigla_sp, ")"),
+      subtitle = paste0("IDRGP: ", row_perfil$idrgp_real, " | Status: ", row_perfil$status)
+    ) +
+    ggplot2::theme_void() +
+    ggplot2::coord_sf(
+      xlim = bbox_sp[c(1, 3)],
+      ylim = bbox_sp[c(2, 4)],
+      expand = TRUE
+    )
+
+  # Legenda discreta de cores (somente se houver múltiplos status no "universo" analisado)
+  # Nota: neste mapa há apenas 1 subprefeitura destacada, entÃ£o a legenda só é útil quando
+  # se deseja comunicar a paleta completa.
+  if (dplyr::n_distinct(df_perfil$status) > 1) {
+    legend_sf <- df_perfil |>
+      dplyr::distinct(status) |>
+      dplyr::mutate(x = bbox_sp$xmin, y = bbox_sp$ymin) |>
+      sf::st_as_sf(coords = c("x", "y"), crs = 4326)
+
+    p <- p +
+      ggplot2::geom_sf(
+        data = legend_sf,
+        ggplot2::aes(fill = status),
+        shape = 21,
+        alpha = 0
+      ) +
+      ggplot2::scale_fill_manual(values = cores_status, name = "Status IDRGP", limits = names(cores_status))
+  }
+
+  # Norte e escala (minimalistas; escala 10 km)
+  if (!requireNamespace("ggspatial", quietly = TRUE)) {
+    stop("Pacote `ggspatial` nao instalado. Instale para adicionar norte e escala nos mapas.")
+  }
+
+  p <- p +
+    ggspatial::annotation_north_arrow(
+      location = "tr",
+      style = ggspatial::north_arrow_minimal
+    ) +
+    ggspatial::annotation_scale(
+      location = "br",
+      width_hint = 0.3,
+      style = "ticks",
+      unit_category = "metric",
+      text_cex = 0.7
+    )
+
+  return(p)
+}
+
+# 5) Loop de exportação ------------------------------------------------------------
+subprefs_lista <- sort(unique(todas_subprefs$subprefeitura))
+cat("Gerando", length(subprefs_lista), "mapas (localização de subprefeituras)...\n")
+
+for (sp in subprefs_lista) {
+  p <- gerar_mapa_subpref(sp)
+  nome_arq <- paste0("mapa_detalhado_", janitor::make_clean_names(sp), ".png")
+  ggplot2::ggsave(
+    filename = file.path(pasta_mapas_individuais, nome_arq),
+    plot = p,
+    width = 10,
+    height = 8,
+    dpi = 300
+  )
+}
+
+cat("✅ Mapas exportados em:", pasta_mapas_individuais, "\n")
+```
+
+### Tabela e gráfico de acoes regionalizadas (2022—2025)
+
+```{r tabela_grafico_acoes_regionalizadas, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# TABELA + GRÃFICO — AÃ§ões Regionalizadas por Subprefeitura (2022—2025)
+# - Tabela em HTML (DT) ou alternativa (kable)
+# - Gráfico de barras com a mesma paleta cores_status (por status)
+# ============================================================================
+
+if (!exists("df_integrado")) stop("Objeto `df_integrado` nao encontrado.")
+
+# 1) Extração dos dados ------------------------------------------------------------
+# Construímos um dataframe integrado (sem geometria) com os totais por:
+# subprefeitura x sigla x código de empenho x ano.
+for (ano in 2022:2025) {
+  if (!exists(paste0("df_", ano))) {
+    stop("Objeto `df_", ano, "` nao encontrado. Execute os chunks de processamento (2022—2025) antes.")
+  }
+}
+
+df_base_long <- dplyr::bind_rows(df_2022_25_DA, df_2023_25_DA, df_2024_25_DA, df_2025_25_DA)
+
+perfil_subpref <- df_integrado |>
+  sf::st_drop_geometry() |>
+  dplyr::select(subprefeitura, join_key, sigla, status = status_estatistico) |>
+  dplyr::distinct(subprefeitura, .keep_all = TRUE)
+
+df_integrado_sem_geo <- df_base_long |>
+  dplyr::mutate(join_key = norm_name(subprefeitura)) |>
+  dplyr::left_join(perfil_subpref, by = "join_key") |>
+  dplyr::group_by(subprefeitura, sigla, status, codigo_empenho, ano) |>
+  dplyr::summarise(valor_regionalizado = sum(valor_detalhamento_acao, na.rm = TRUE), .groups = "drop") |>
+  tidyr::pivot_wider(
+    names_from = ano,
+    values_from = valor_regionalizado,
+    values_fill = 0
+  ) |>
+  dplyr::rename(
+    valor_regionalizado_2022 = `2022`,
+    valor_regionalizado_2023 = `2023`,
+    valor_regionalizado_2024 = `2024`,
+    valor_regionalizado_2025 = `2025`
+  ) |>
+  dplyr::mutate(
+    valor_total_acoes_regionalizadas =
+      valor_regionalizado_2022 + valor_regionalizado_2023 + valor_regionalizado_2024 + valor_regionalizado_2025
+  )
+
+# Alias com o nome esperado no chunk (tabela detalhada por código de empenho)
+df_acoes <- df_integrado_sem_geo
+
+# Checagem de integridade: toda subprefeitura deve ter sigla e status
+if (any(is.na(df_acoes$sigla)) || any(is.na(df_acoes$status))) {
+  faltantes <- df_base_long |>
+    dplyr::mutate(join_key = norm_name(subprefeitura)) |>
+    dplyr::anti_join(perfil_subpref, by = "join_key") |>
+    dplyr::distinct(subprefeitura, join_key) |>
+    dplyr::slice_head(n = 10)
+
+  stop(
+    "Há subprefeituras sem correspondência (sigla/status) ao juntar com `df_integrado`. ",
+    "Exemplos (até 10):\n",
+    paste0("- ", faltantes$subprefeitura, " (join_key=", faltantes$join_key, ")", collapse = "\n")
+  )
+}
+
+# Totais por subprefeitura (para o gráfico)
+df_acoes_totais <- df_integrado_sem_geo |>
+  dplyr::group_by(subprefeitura, sigla, status) |>
+  dplyr::summarise(
+    valor_regionalizado_2022 = sum(valor_regionalizado_2022, na.rm = TRUE),
+    valor_regionalizado_2023 = sum(valor_regionalizado_2023, na.rm = TRUE),
+    valor_regionalizado_2024 = sum(valor_regionalizado_2024, na.rm = TRUE),
+    valor_regionalizado_2025 = sum(valor_regionalizado_2025, na.rm = TRUE),
+    valor_total_acoes_regionalizadas = sum(valor_total_acoes_regionalizadas, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# 2) Tabela formatada --------------------------------------------------------------
+titulo_tabela <- "AÃ§ões Regionalizadas por Subprefeitura (2022-2025)"
+
+tbl_out <- df_acoes |>
+  dplyr::select(
+    Subprefeitura = subprefeitura,
+    Sigla = sigla,
+    `Código de Empenho` = codigo_empenho,
+    `2022` = valor_regionalizado_2022,
+    `2023` = valor_regionalizado_2023,
+    `2024` = valor_regionalizado_2024,
+    `2025` = valor_regionalizado_2025,
+    Total = valor_total_acoes_regionalizadas
+  )
+
+if (requireNamespace("DT", quietly = TRUE) && requireNamespace("htmltools", quietly = TRUE)) {
+  DT::datatable(
+    tbl_out,
+    rownames = FALSE,
+    caption = htmltools::tags$caption(
+      style = "caption-side: top; text-align: left; font-weight: bold;",
+      titulo_tabela
+    ),
+    options = list(
+      pageLength = 15,
+      scrollX = TRUE
+    )
+  ) |>
+    DT::formatCurrency(
+      columns = c("2022", "2023", "2024", "2025", "Total"),
+      currency = "R$",
+      mark = ".",
+      dec.mark = ","
+    )
+} else {
+  knitr::kable(
+    tbl_out,
+    caption = titulo_tabela,
+    format = "html",
+    digits = 0
+  )
+}
+
+# 3) Gráfico de barras -------------------------------------------------------------
+if (!exists("cores_status")) {
+  cores_status <- c(
+    "Abaixo do IDRGP Alvo" = "#d97a0f",
+    "Dentro do IDRGP Alvo" = "#0ea1cf",
+    "Acima do IDRGP Alvo"  = "#1A1442"
+  )
+}
+
+df_plot <- df_acoes_totais |>
+  dplyr::arrange(dplyr::desc(valor_total_acoes_regionalizadas)) |>
+  dplyr::mutate(subprefeitura = factor(subprefeitura, levels = subprefeitura))
+
+grafico_acoes <- ggplot2::ggplot(
+  df_plot,
+  ggplot2::aes(
+    x = subprefeitura,
+    y = valor_total_acoes_regionalizadas,
+    fill = status
+  )
+) +
+  ggplot2::geom_col() +
+  ggplot2::geom_text(
+    ggplot2::aes(
+      label = scales::dollar(
+        valor_total_acoes_regionalizadas,
+        prefix = "R$ ",
+        big.mark = ".",
+        decimal.mark = ","
+      )
+    ),
+    vjust = -0.5,
+    size = 3
+  ) +
+  ggplot2::scale_fill_manual(values = cores_status, name = "Status IDRGP", limits = names(cores_status)) +
+  ggplot2::labs(
+    title = "Execução Total de AÃ§ões Regionalizadas por Subprefeitura",
+    x = NULL,
+    y = "Valor executado (R$)"
+  ) +
+  ggplot2::theme_minimal() +
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(angle = 45, hjust = 1),
+    panel.grid.minor = ggplot2::element_blank()
+  )
+
+print(grafico_acoes)
+
+ggplot2::ggsave(
+  filename = file.path(pasta_saida, "graficos_25_DA", "grafico_acoes_regionalizadas_25_DA.png"),
+  plot = grafico_acoes,
+  width = 14,
+  height = 8,
+  dpi = 300
+)
+```
+
+## ConclusÃ£o
+
+```{r conclusao}
+res_2025 <- if (exists("res_2025")) res_2025 else idrgp_por_ano[["2025"]]
+total_valor <- res_2025$total_valor
+
+cat("===========================================================\n")
+cat("  IDRGP 2022—2025 — Relatório concluído com sucesso.\n")
+cat("===========================================================\n\n")
+cat("  Ciclo analisado:      2022 a 2025\n")
+cat("  Valor 2025:           R$", format(total_valor, big.mark = ".", decimal.mark = ","), "\n")
+cat("  Total ciclo:          R$", format(sum(df_ciclo$valor_2022_a_2025),
+                                     big.mark = ".", decimal.mark = ","), "\n")
+cat("  Subprefeituras:       32\n")
+cat("  Método 2025:          ", toupper(metodo_estatistico), "\n")
+cat("  p-valor 2025:         ", formatC(teste_principal$p.value, format = "e", digits = 2), "\n")
+cat("  IC 95% (2025):        [", round(ic_inf, 6), ";", round(ic_sup, 6), "]\n\n")
+cat("  Método ciclo:         ", toupper(metodo_estatistico_ciclo), "\n")
+cat("  p-valor ciclo:        ", formatC(teste_principal_ciclo$p.value, format = "e", digits = 2), "\n")
+cat("  IC 95% (ciclo):       [", round(ic_inf_ciclo, 6), ";", round(ic_sup_ciclo, 6), "]\n\n")
+cat("  Produtos em:          ", pasta_saida, "\n")
+cat("  Elaboração: SEPLAN/CPMA — Prefeitura de São Paulo.\n")
+cat("===========================================================\n")
+```
+
