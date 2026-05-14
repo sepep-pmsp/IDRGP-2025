@@ -788,7 +788,7 @@ limpar_orcamento <- function(arquivo, ano, sheet = 1) {
 Este bloco consolida a base demográfica histórica e prepara as bases orçamentárias para o ciclo do PPA.
 
 ```{r processamento_populacao, echo=FALSE}
-# 1) Base Histórica (Dados Brutos)
+# 1) Base Histórica (Dados Brutos) SMUL
 raw_text <- "
 Município de São Paulo, subprefeituras e distritos municipais 
 População Município de São Paulo, subprefeituras e distritos municipais 1950, 1960, 1970, 1980, 1991, 2000, 2010 e 2022
