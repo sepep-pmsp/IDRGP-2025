@@ -1,81 +1,75 @@
 ---
-title: |
-  \vspace{2cm}
-  \textbf{Índice de Distribuição Regional do Gasto Público}\\
-  \large Análise do Ciclo PPA 2022--2025
+title: "\\vspace{2cm}\n\\textbf{Índice de Distribuição Regional do Gasto Público}\\\\\n\\large
+  Análise do Ciclo PPA 2022--2025\n"
 author: |
   Coordenadoria de Planejamento, Monitoramento e Avaliação (CPMA)\\
   Secretária Executiva de Informações e Monitoramento Estratégicos (SIME)\\
   Secretaria Municipal de Planejamento Urbano (SEPLAN)\\
   Prefeitura do Município de São Paulo
 date: "`r format(Sys.Date(), '%B de %Y')`"
-lang: pt-BR
 output:
   pdf_document:
-    toc: false
+    toc: true
+    toc_depth: 2
     number_sections: true
     latex_engine: xelatex
     keep_tex: false
     fig_caption: true
+  html_document:
+    toc: true
+    toc_depth: '2'
+    df_print: paged
+lang: "pt-BR"
 geometry:
-  - top=3cm
-  - bottom=2cm
-  - left=3cm
-  - right=2cm
+- top=3cm
+- bottom=2cm
+- left=3cm
+- right=2cm
 fontsize: 12pt
 linestretch: 1.5
 indent: true
 header-includes:
-  # --- Pacotes essenciais ---
-  - \usepackage{fontspec}
-  - \usepackage{polyglossia}
-  - \setmainlanguage{portuguese}
-  - \usepackage{float}
-  - \floatplacement{figure}{H}
-  - \floatplacement{table}{H}
-  - \usepackage{booktabs}
-  - \usepackage{longtable}
-  - \usepackage{array}
-  - \usepackage{multirow}
-  - \usepackage{graphicx}
-  - \usepackage{caption}
-  - \usepackage{setspace}
-  - \usepackage{indentfirst}
-  - \usepackage{titlesec}
-  - \usepackage{titletoc}
-  - \usepackage{fancyhdr}
-  - \usepackage{xcolor}
-  - \usepackage{hyperref}
-  - \usepackage{microtype}
-  - \usepackage{geometry}
-  - \usepackage{ragged2e}
-  - \usepackage{etoolbox}
-  # --- Fonte ABNT: Times New Roman ---
-  - \setmainfont{Times New Roman}
-  - \setsansfont{Arial}
-  # --- Cor institucional PMSP ---
-  - \definecolor{pmsp}{RGB}{0, 102, 163}
-  # --- Cabeçalho e rodapé ABNT ---
-  - \pagestyle{fancy}
-  - \fancyhf{}
-  - \fancyhead[R]{\footnotesize\textcolor{gray}{IDRGP 2025 — CPMA/SIME/SEPLAN/PMSP}}
-  - \fancyfoot[C]{\thepage}
-  - \renewcommand{\headrulewidth}{0.4pt}
-  - \renewcommand{\footrulewidth}{0pt}
-  # --- Títulos de seção ABNT ---
-  - \titleformat{\section}{\large\bfseries}{}{0em}{}[\vspace{0.2em}\hrule\vspace{0.5em}]
-  - \titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
-  - \titleformat{\subsubsection}{\normalsize\itshape}{}{0em}{}
-  - \titlespacing{\section}{0pt}{1.5em}{0.8em}
-  - \titlespacing{\subsection}{0pt}{1em}{0.5em}
-  # --- Legendas centralizadas (ABNT: acima de tabelas, abaixo de figuras) ---
-  - \captionsetup[figure]{font=small, labelfont=bf, justification=centering, position=below}
-  - \captionsetup[table]{font=small, labelfont=bf, justification=centering, position=above}
-  # --- Hyperlinks ---
-  - \hypersetup{colorlinks=true, linkcolor=pmsp, urlcolor=pmsp, citecolor=pmsp}
-  # --- Parágrafo ABNT: recuo 1,25cm, sem espaço entre parágrafos ---
-  - \setlength{\parindent}{1.25cm}
-  - \setlength{\parskip}{0pt}
+- \usepackage{fontspec}
+- \usepackage{polyglossia}
+- \setmainlanguage{portuguese}
+- \usepackage{float}
+- \floatplacement{figure}{H}
+- \floatplacement{table}{H}
+- \usepackage{booktabs}
+- \usepackage{longtable}
+- \usepackage{array}
+- \usepackage{multirow}
+- \usepackage{graphicx}
+- \usepackage{caption}
+- \usepackage{setspace}
+- \usepackage{indentfirst}
+- \usepackage{titlesec}
+- \usepackage{fancyhdr}
+- \usepackage{xcolor}
+- \usepackage{hyperref}
+- \usepackage{microtype}
+- \usepackage{geometry}
+- \usepackage{ragged2e}
+- \usepackage{etoolbox}
+- \setmainfont{Times New Roman}
+- \setsansfont{Arial}
+- \definecolor{pmsp}{RGB}{0, 102, 163}
+- \pagestyle{fancy}
+- \fancyhf{}
+- \fancyhead[R]{\footnotesize\textcolor{gray}{IDRGP 2025 — CPMA/SIME/SEPLAN/PMSP}}
+- \fancyfoot[C]{\thepage}
+- \renewcommand{\headrulewidth}{0.4pt}
+- \renewcommand{\footrulewidth}{0pt}
+- \titleformat{\section}{\large\bfseries}{}{0em}{}[\vspace{0.2em}\hrule\vspace{0.5em}]
+- \titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+- \titleformat{\subsubsection}{\normalsize\itshape}{}{0em}{}
+- \titlespacing{\section}{0pt}{1.5em}{0.8em}
+- \titlespacing{\subsection}{0pt}{1em}{0.5em}
+- \captionsetup[figure]{font=small, labelfont=bf, justification=centering, position=below}
+- \captionsetup[table]{font=small, labelfont=bf, justification=centering, position=above}
+- \hypersetup{colorlinks=true, linkcolor=pmsp, urlcolor=pmsp, citecolor=pmsp}
+- \setlength{\parindent}{1.25cm}
+- \setlength{\parskip}{0pt}
 ---
 
 ```{r setup-pdf, include=FALSE}
@@ -181,11 +175,9 @@ tbl_abnt <- function(df, legenda = NULL, digits = 2, fonte = NULL) {
 \newpage
 
 <!-- ================================================================ -->
-<!--  SUMÁRIO (2ª PÁGINA)                                             -->
+<!--  SUMÁRIO (2ª PÁGINA) — gerado automaticamente pelo pandoc/toc   -->
 <!-- ================================================================ -->
 
-\thispagestyle{empty}
-\tableofcontents
 \newpage
 
 <!-- ================================================================ -->
@@ -249,17 +241,48 @@ As fichas a seguir detalham o desempenho orçamentário e o contexto territorial
 pasta_ind <- file.path(pasta_saida, "mapas_subprefeituras")
 if (dir.exists(pasta_ind)) {
   arqs <- sort(list.files(pasta_ind, pattern = "\\.png$", full.names = TRUE))
-  for (p in arqs) {
-    nm <- basename(p)
-    titulo <- nm |>
+
+  fmt_titulo <- function(p) {
+    basename(p) |>
       stringr::str_remove("^mapa_detalhado_") |>
       stringr::str_remove("\\.png$") |>
       stringr::str_replace_all("_", " ") |>
       stringr::str_to_title()
-    cat(sprintf(
-      "\n\n## %s\n\n\\begin{figure}[H]\n\\centering\n\\includegraphics[width=0.90\\textwidth]{%s}\n\\caption{Ficha territorial — %s (2025)}\n\\end{figure}\n\n\\newpage\n\n",
-      titulo, p, titulo
-    ))
+  }
+
+  bloco_mini <- function(caminho, titulo, hfill = FALSE) {
+    sufixo <- if (hfill) "\\hfill" else ""
+    paste0(
+      "\\begin{minipage}[t]{0.47\\textwidth}\n",
+      "\\centering\n",
+      sprintf("\\includegraphics[width=\\textwidth,keepaspectratio]{%s}\\\\[2pt]\n", caminho),
+      sprintf("{\\footnotesize\\textbf{%s}}\n", titulo),
+      "\\end{minipage}", sufixo, "\n"
+    )
+  }
+
+  # ---- 8 por página: 2 colunas × 4 linhas ----
+  por_pagina <- 8
+  paginas    <- split(arqs, ceiling(seq_along(arqs) / por_pagina))
+
+  for (pg in paginas) {
+    if (length(pg) %% 2 != 0) pg <- c(pg, NA_character_)
+
+    cat("\n\n")
+    for (i in seq(1, length(pg), by = 2)) {
+      p1 <- pg[i]
+      p2 <- pg[i + 1]
+
+      cat(bloco_mini(p1, fmt_titulo(p1), hfill = TRUE))
+
+      if (!is.na(p2)) {
+        cat(bloco_mini(p2, fmt_titulo(p2), hfill = FALSE))
+      } else {
+        cat("\\begin{minipage}[t]{0.47\\textwidth}\\end{minipage}\n")
+      }
+      cat("\\vspace{0.5cm}\n\n")
+    }
+    cat("\\newpage\n\n")
   }
 }
 ```
@@ -288,7 +311,7 @@ for (g in graficos) {
   p <- file.path(pasta_saida, g$arq)
   if (file.exists(p)) {
     cat(sprintf(
-      "\n\n\\begin{figure}[H]\n\\centering\n\\includegraphics[width=0.92\\textwidth]{%s}\n\\caption{%s}\n\\floatfoot{\\footnotesize\\textit{Nota: %s}}\n\\end{figure}\n\n\\newpage\n\n",
+      "\n\n\\begin{figure}[H]\n\\centering\n\\includegraphics[width=0.92\\textwidth]{%s}\n\\caption{%s}\n\\par\\vspace{0.3em}{\\footnotesize\\textit{Nota: %s}}\n\\end{figure}\n\n\\newpage\n\n",
       p, g$titulo, g$nota
     ))
   }

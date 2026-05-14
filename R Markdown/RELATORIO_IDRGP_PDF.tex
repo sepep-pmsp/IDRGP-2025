@@ -1,0 +1,824 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+\documentclass[
+  brazilian,
+  12pt,
+]{article}
+\usepackage{xcolor}
+\usepackage[top=3cm,bottom=2cm,left=3cm,right=2cm]{geometry}
+\usepackage{amsmath,amssymb}
+\setcounter{secnumdepth}{5}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\usepackage{setspace}
+\usepackage{longtable,booktabs,array}
+\newcounter{none} % for unnumbered tables
+\usepackage{calc} % for calculating minipage widths
+% Correct order of tables after \paragraph or \subparagraph
+\usepackage{etoolbox}
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+% Allow footnotes in longtable head/foot
+\IfFileExists{footnotehyper.sty}{\usepackage{footnotehyper}}{\usepackage{footnote}}
+\makesavenoteenv{longtable}
+\usepackage{graphicx}
+\makeatletter
+\newsavebox\pandoc@box
+\newcommand*\pandocbounded[1]{% scales image to fit in text height/width
+  \sbox\pandoc@box{#1}%
+  \Gscale@div\@tempa{\textheight}{\dimexpr\ht\pandoc@box+\dp\pandoc@box\relax}%
+  \Gscale@div\@tempb{\linewidth}{\wd\pandoc@box}%
+  \ifdim\@tempb\p@<\@tempa\p@\let\@tempa\@tempb\fi% select the smaller of both
+  \ifdim\@tempa\p@<\p@\scalebox{\@tempa}{\usebox\pandoc@box}%
+  \else\usebox{\pandoc@box}%
+  \fi%
+}
+% Set default figure placement to htbp
+\def\fps@figure{htbp}
+\makeatother
+\ifLuaTeX
+\usepackage[bidi=basic,shorthands=off]{babel}
+\else
+\usepackage[bidi=default,shorthands=off]{babel}
+\fi
+\ifLuaTeX
+  \usepackage{selnolig} % disable illegal ligatures
+\fi
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setmainlanguage{portuguese}
+\usepackage{float}
+\floatplacement{figure}{H}
+\floatplacement{table}{H}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{setspace}
+\usepackage{indentfirst}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{ragged2e}
+\usepackage{etoolbox}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\definecolor{pmsp}{RGB}{0, 102, 163}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\footnotesize\textcolor{gray}{IDRGP 2025 — CPMA/SIME/SEPLAN/PMSP}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\titleformat{\section}{\large\bfseries}{}{0em}{}[\vspace{0.2em}\hrule\vspace{0.5em}]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{}{0em}{}
+\titlespacing{\section}{0pt}{1.5em}{0.8em}
+\titlespacing{\subsection}{0pt}{1em}{0.5em}
+\captionsetup[figure]{font=small, labelfont=bf, justification=centering, position=below}
+\captionsetup[table]{font=small, labelfont=bf, justification=centering, position=above}
+\hypersetup{colorlinks=true, linkcolor=pmsp, urlcolor=pmsp, citecolor=pmsp}
+\setlength{\parindent}{1.25cm}
+\setlength{\parskip}{0pt}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{wrapfig}
+\usepackage{float}
+\usepackage{colortbl}
+\usepackage{pdflscape}
+\usepackage{tabu}
+\usepackage{threeparttable}
+\usepackage{threeparttablex}
+\usepackage[normalem]{ulem}
+\usepackage{makecell}
+\usepackage{xcolor}
+\usepackage{bookmark}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdflang={pt-BR},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{\vspace{2cm}
+
+\textbf{Índice de Distribuição Regional do Gasto Público}\textbackslash{}
+\large Análise do Ciclo PPA 2022--2025}
+\author{Coordenadoria de Planejamento, Monitoramento e Avaliação
+(CPMA)\textbackslash{} Secretária Executiva de Informações e
+Monitoramento Estratégicos (SIME)\textbackslash{} Secretaria Municipal
+de Planejamento Urbano (SEPLAN)\textbackslash{} Prefeitura do Município
+de São Paulo}
+\date{maio de 2026}
+
+\begin{document}
+\maketitle
+
+{
+\setcounter{tocdepth}{2}
+\tableofcontents
+}
+\setstretch{1.5}
+\thispagestyle{empty}
+
+\begin{center}
+
+\vspace*{1cm}
+
+{\large \textbf{PREFEITURA DO MUNICÍPIO DE SÃO PAULO}}\\[0.3cm]
+{\normalsize Secretaria Municipal de Planejamento Urbano — SEPLAN}\\[0.1cm]
+{\normalsize Secretária Executiva de Informações e Monitoramento Estratégicos — SIME}\\[0.1cm]
+{\normalsize Coordenadoria de Planejamento e Monitoramento de Ações — CPMA}
+
+\vspace{3cm}
+
+\textcolor{pmsp}{\rule{12cm}{2pt}}
+
+\vspace{0.8cm}
+
+{\LARGE \textbf{ÍNDICE DE DISTRIBUIÇÃO REGIONAL}}\\[0.4cm]
+{\LARGE \textbf{DO GASTO PÚBLICO (IDRGP)}}\\[1.2cm]
+{\large \textit{Análise do Ciclo PPA 2022–2025}}
+
+\vspace{0.8cm}
+
+\textcolor{pmsp}{\rule{12cm}{2pt}}
+
+\vspace{3.5cm}
+
+{\normalsize São Paulo, maio de 2026}\\[0.2cm]
+{\small Documento de uso institucional — CPMA/SIME/SEPLAN/PMSP}
+
+\end{center}
+
+\newpage
+
+\newpage
+
+\setcounter{page}{1}
+\pagestyle{fancy}
+
+\section{Resumo Executivo}\label{resumo-executivo}
+
+Este relatório apresenta o balanço da distribuição territorial do gasto
+público no Município de São Paulo para o ciclo do Plano Plurianual
+\textbf{2022--2025}, utilizando a metodologia do \textbf{Índice de
+Distribuição Regional do Gasto Público (IDRGP)}.
+
+O IDRGP confronta a execução orçamentária real de cada subprefeitura com
+uma \textbf{Alocação Orçamentária Esperada (AOE)}, derivada do
+\textbf{Índice de Vulnerabilidade Urbana (IVU 2025)}. O resultado indica
+se os recursos estão sendo alocados de forma proporcional às
+necessidades territoriais.
+
+\textbf{Principais dimensões analisadas:}
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Equidade territorial:} confronto entre gasto executado e metas
+  de vulnerabilidade social;
+\item
+  \textbf{Adesão orçamentária:} aplicação de testes de hipótese para
+  classificação estatística das subprefeituras;
+\item
+  \textbf{Evolução histórica:} monitoramento contínuo do índice ao longo
+  dos quatro anos do ciclo;
+\item
+  \textbf{Regionalização:} grau de territorialização do orçamento por
+  ação governamental.
+\end{itemize}
+
+\textbf{Fontes de dados:}
+
+\begin{itemize}
+\tightlist
+\item
+  Execução orçamentária regionalizada --- Secretaria Municipal de
+  Fazenda (SF);
+\item
+  IDRGP Alvo (AOE/IVU 2025) --- SEPLAN/CPMA;
+\item
+  Dados cartográficos --- GeoSampa (Subprefeituras de São Paulo);
+\item
+  Dados populacionais --- IBGE, Censos Demográficos 1950--2022.
+\end{itemize}
+
+\newpage
+
+\section{Resultados Territoriais --- Mapas do
+IDRGP}\label{resultados-territoriais-mapas-do-idrgp}
+
+Os mapas a seguir apresentam a classificação das 32 subprefeituras em
+relação ao IDRGP Alvo. A legenda indica três categorias estatísticas:
+\textbf{Acima do Alvo}, \textbf{Dentro do Alvo} e \textbf{Abaixo do
+Alvo}, determinadas pelo intervalo de confiança de 95\% do teste
+estatístico aplicado.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{resultados/mapa1_idrgp_2022.png}
+\caption{Classificação territorial do IDRGP — 2022}
+\label{fig:mapa1_idrgp_2022}
+\end{figure}
+
+\newpage
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{resultados/mapa2_idrgp_2023.png}
+\caption{Classificação territorial do IDRGP — 2023}
+\label{fig:mapa2_idrgp_2023}
+\end{figure}
+
+\newpage
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{resultados/mapa3_idrgp_2024.png}
+\caption{Classificação territorial do IDRGP — 2024}
+\label{fig:mapa3_idrgp_2024}
+\end{figure}
+
+\newpage
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{resultados/mapa4_idrgp_2025.png}
+\caption{Classificação territorial do IDRGP — 2025}
+\label{fig:mapa4_idrgp_2025}
+\end{figure}
+
+\newpage
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.88\textwidth]{resultados/mapa5_idrgp_agregado_2022_2025.png}
+\caption{Balanço consolidado do ciclo PPA (2022–2025)}
+\label{fig:mapa5_idrgp_agregado_2022_2025}
+\end{figure}
+
+\newpage
+
+\section{Fichas Individuais por Subprefeitura
+(2025)}\label{fichas-individuais-por-subprefeitura-2025}
+
+As fichas a seguir detalham o desempenho orçamentário e o contexto
+territorial de cada uma das 32 subprefeituras do município no exercício
+de 2025.
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_aricanduva_formosa_carrao.png}\\[2pt]
+{\footnotesize\textbf{Aricanduva Formosa Carrao}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_butanta.png}\\[2pt]
+{\footnotesize\textbf{Butanta}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_campo_limpo.png}\\[2pt]
+{\footnotesize\textbf{Campo Limpo}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_capela_do_socorro.png}\\[2pt]
+{\footnotesize\textbf{Capela Do Socorro}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_casa_verde_cachoeirinha.png}\\[2pt]
+{\footnotesize\textbf{Casa Verde Cachoeirinha}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_cidade_ademar.png}\\[2pt]
+{\footnotesize\textbf{Cidade Ademar}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_cidade_tiradentes.png}\\[2pt]
+{\footnotesize\textbf{Cidade Tiradentes}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_ermelino_matarazzo.png}\\[2pt]
+{\footnotesize\textbf{Ermelino Matarazzo}}
+\end{minipage}
+\vspace{0.5cm}
+
+\newpage
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_freguesia_brasilandia.png}\\[2pt]
+{\footnotesize\textbf{Freguesia Brasilandia}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_guaianases.png}\\[2pt]
+{\footnotesize\textbf{Guaianases}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_ipiranga.png}\\[2pt]
+{\footnotesize\textbf{Ipiranga}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_itaim_paulista.png}\\[2pt]
+{\footnotesize\textbf{Itaim Paulista}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_itaquera.png}\\[2pt]
+{\footnotesize\textbf{Itaquera}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_jabaquara.png}\\[2pt]
+{\footnotesize\textbf{Jabaquara}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_jacana_tremembe.png}\\[2pt]
+{\footnotesize\textbf{Jacana Tremembe}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_lapa.png}\\[2pt]
+{\footnotesize\textbf{Lapa}}
+\end{minipage}
+\vspace{0.5cm}
+
+\newpage
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_m_boi_mirim.png}\\[2pt]
+{\footnotesize\textbf{M Boi Mirim}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_mooca.png}\\[2pt]
+{\footnotesize\textbf{Mooca}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_parelheiros.png}\\[2pt]
+{\footnotesize\textbf{Parelheiros}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_penha.png}\\[2pt]
+{\footnotesize\textbf{Penha}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_perus_anhanguera.png}\\[2pt]
+{\footnotesize\textbf{Perus Anhanguera}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_pinheiros.png}\\[2pt]
+{\footnotesize\textbf{Pinheiros}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_pirituba_jaragua.png}\\[2pt]
+{\footnotesize\textbf{Pirituba Jaragua}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_santana_tucuruvi.png}\\[2pt]
+{\footnotesize\textbf{Santana Tucuruvi}}
+\end{minipage}
+\vspace{0.5cm}
+
+\newpage
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_santo_amaro.png}\\[2pt]
+{\footnotesize\textbf{Santo Amaro}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_sao_mateus.png}\\[2pt]
+{\footnotesize\textbf{Sao Mateus}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_sao_miguel_paulista.png}\\[2pt]
+{\footnotesize\textbf{Sao Miguel Paulista}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_sapopemba.png}\\[2pt]
+{\footnotesize\textbf{Sapopemba}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_se.png}\\[2pt]
+{\footnotesize\textbf{Se}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_vila_maria_vila_guilherme.png}\\[2pt]
+{\footnotesize\textbf{Vila Maria Vila Guilherme}}
+\end{minipage}
+\vspace{0.5cm}
+
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_vila_mariana.png}\\[2pt]
+{\footnotesize\textbf{Vila Mariana}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\textwidth}
+\centering
+\includegraphics[width=\textwidth,keepaspectratio]{resultados/mapas_subprefeituras/mapa_detalhado_vila_prudente.png}\\[2pt]
+{\footnotesize\textbf{Vila Prudente}}
+\end{minipage}
+\vspace{0.5cm}
+
+\newpage
+
+\section{Análise Comparativa --- Gráficos de
+Desempenho}\label{anuxe1lise-comparativa-gruxe1ficos-de-desempenho}
+
+Os gráficos a seguir detalham a magnitude das diferenças orçamentárias e
+a evolução histórica do IDRGP por subprefeitura ao longo do ciclo
+2022--2025.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{resultados/grafico1_idrgp_2025_pct.png}
+\caption{Diferença percentual entre IDRGP Real e Alvo — 2025}
+\par\vspace{0.3em}{\footnotesize\textit{Nota: Valores positivos indicam alocação acima do esperado pelo IVU 2025.}}
+\end{figure}
+
+\newpage
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{resultados/grafico2_idrgp_agregado_pct.png}
+\caption{Diferença percentual consolidada — Ciclo 2022–2025}
+\par\vspace{0.3em}{\footnotesize\textit{Nota: Saldo acumulado dos quatro anos do PPA.}}
+\end{figure}
+
+\newpage
+
+\textbackslash begin\{figure\}{[}H{]} \centering
+\includegraphics[width=0.92\textwidth]{resultados/grafico3_idrgp_2025_reais.png}
+\textbackslash caption\{Execução orçamentária em valores absolutos (R\$)
+--- 2025\}
+
+\par\vspace{0.3em}{\footnotesize\textit{Nota: Valores nominais. Fonte: SF/PMSP.}}
+
+\textbackslash end\{figure\}
+
+\newpage
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{resultados/grafico4_serie_2022_2025.png}
+\caption{Série histórica do IDRGP por subprefeitura (2022–2025)}
+\par\vspace{0.3em}{\footnotesize\textit{Nota: Evolução anual do índice real em relação ao alvo.}}
+\end{figure}
+
+\newpage
+
+\section{Qualidade da Base --- Taxa de
+Regionalização}\label{qualidade-da-base-taxa-de-regionalizauxe7uxe3o}
+
+A regionalização é o processo de atribuir cada gasto a um território
+específico. Quanto maior a taxa de regionalização, maior a precisão e
+confiabilidade do IDRGP. A tabela abaixo apresenta a evolução desse
+indicador ao longo do ciclo.
+
+\begingroup\fontsize{10}{12}\selectfont
+
+\begin{longtabu} to \linewidth {>{\raggedleft}X>{\raggedleft}X>{\raggedright}X>{\raggedright}X>{\raggedright}X}
+\caption{\label{tab:tabela-regionalizacao}Evolução da taxa de regionalização do orçamento (2022–2025)}\\
+\toprule
+Ano & Ações analisadas & Valor Total (R$) & Valor Regionalizado (R$) & Taxa de Regionalização\\
+\midrule
+\endfirsthead
+\caption[]{Evolução da taxa de regionalização do orçamento (2022–2025) \textit{(continued)}}\\
+\toprule
+Ano & Ações analisadas & Valor Total (R$) & Valor Regionalizado (R$) & Taxa de Regionalização\\
+\midrule
+\endhead
+
+\endfoot
+\bottomrule
+\multicolumn{5}{l}{\rule{0pt}{1em}\textit{Fonte: } Secretaria Municipal de Fazenda (SF) e SEPLAN/CPMA/PMSP.}\\
+\endlastfoot
+\cellcolor{gray!10}{2022} & \cellcolor{gray!10}{405} & \cellcolor{gray!10}{R$ 74.233.972.013} & \cellcolor{gray!10}{R$ 16.129.553.626} & \cellcolor{gray!10}{21.7%}\\
+2023 & 404 & R$ 91.190.652.546 & R$ 33.321.223.743 & 36.5%\\
+\cellcolor{gray!10}{2024} & \cellcolor{gray!10}{391} & \cellcolor{gray!10}{R$ 94.485.897.645} & \cellcolor{gray!10}{R$ 45.647.361.712} & \cellcolor{gray!10}{48.3%}\\
+2025 & 395 & R$ 103.136.618.407 & R$ 57.170.300.140 & 55.4%\\*
+\end{longtabu}
+\endgroup{}
+
+\newpage
+
+\section{Destaques por Subprefeitura
+(2025)}\label{destaques-por-subprefeitura-2025}
+
+\subsection{Subprefeituras com maior alocação acima do
+esperado}\label{subprefeituras-com-maior-alocauxe7uxe3o-acima-do-esperado}
+
+\begingroup\fontsize{10}{12}\selectfont
+
+\begin{longtabu} to \linewidth {>{\raggedright}X>{\raggedright}X>{\raggedright}X>{\raggedright}X>{\raggedright}X}
+\caption{\label{tab:tabela-acima}Subprefeituras com maior saldo positivo — IDRGP Real > Alvo (2025)}\\
+\toprule
+Subprefeitura & IDRGP Alvo (%) & IDRGP Real (%) & Diferença (p.p.) & Classificação\\
+\midrule
+\endfirsthead
+\caption[]{Subprefeituras com maior saldo positivo — IDRGP Real > Alvo (2025) \textit{(continued)}}\\
+\toprule
+Subprefeitura & IDRGP Alvo (%) & IDRGP Real (%) & Diferença (p.p.) & Classificação\\
+\midrule
+\endhead
+
+\endfoot
+\bottomrule
+\multicolumn{5}{l}{\rule{0pt}{1em}\textit{Fonte: } Elaboração CPMA/SIME/SEPLAN/PMSP com base em dados da SF. IC 95%.}\\
+\endlastfoot
+\cellcolor{gray!10}{Sé} & \cellcolor{gray!10}{1.77%} & \cellcolor{gray!10}{11.96%} & \cellcolor{gray!10}{10.19%} & \cellcolor{gray!10}{Acima do IDRGP Alvo}\\
+Mooca & 1.52% & 4.23% & 2.71% & Acima do IDRGP Alvo\\
+\cellcolor{gray!10}{Vila Mariana} & \cellcolor{gray!10}{0.79%} & \cellcolor{gray!10}{3.39%} & \cellcolor{gray!10}{2.60%} & \cellcolor{gray!10}{Acima do IDRGP Alvo}\\
+Santo Amaro & 0.78% & 2.91% & 2.13% & Acima do IDRGP Alvo\\
+\cellcolor{gray!10}{Lapa} & \cellcolor{gray!10}{1.20%} & \cellcolor{gray!10}{2.86%} & \cellcolor{gray!10}{1.66%} & \cellcolor{gray!10}{Acima do IDRGP Alvo}\\
+Vila Maria/Vila Guilherme & 1.47% & 2.79% & 1.32% & Acima do IDRGP Alvo\\
+\cellcolor{gray!10}{Jabaquara} & \cellcolor{gray!10}{1.46%} & \cellcolor{gray!10}{2.68%} & \cellcolor{gray!10}{1.22%} & \cellcolor{gray!10}{Acima do IDRGP Alvo}\\
+Pinheiros & 0.63% & 1.74% & 1.11% & Acima do IDRGP Alvo\\
+\cellcolor{gray!10}{Santana/Tucuruvi} & \cellcolor{gray!10}{1.44%} & \cellcolor{gray!10}{2.41%} & \cellcolor{gray!10}{0.97%} & \cellcolor{gray!10}{Acima do IDRGP Alvo}\\
+Butantã & 3.14% & 3.71% & 0.57% & Dentro do IDRGP Alvo\\*
+\end{longtabu}
+\endgroup{}
+
+\vspace{1cm}
+
+\subsection{Subprefeituras com maior alocação abaixo do
+esperado}\label{subprefeituras-com-maior-alocauxe7uxe3o-abaixo-do-esperado}
+
+\begingroup\fontsize{10}{12}\selectfont
+
+\begin{longtabu} to \linewidth {>{\raggedright}X>{\raggedright}X>{\raggedright}X>{\raggedright}X>{\raggedright}X}
+\caption{\label{tab:tabela-abaixo}Subprefeituras com maior saldo negativo — IDRGP Real < Alvo (2025)}\\
+\toprule
+Subprefeitura & IDRGP Alvo (%) & IDRGP Real (%) & Diferença (p.p.) & Classificação\\
+\midrule
+\endfirsthead
+\caption[]{Subprefeituras com maior saldo negativo — IDRGP Real < Alvo (2025) \textit{(continued)}}\\
+\toprule
+Subprefeitura & IDRGP Alvo (%) & IDRGP Real (%) & Diferença (p.p.) & Classificação\\
+\midrule
+\endhead
+
+\endfoot
+\bottomrule
+\multicolumn{5}{l}{\rule{0pt}{1em}\textit{Fonte: } Elaboração CPMA/SIME/SEPLAN/PMSP com base em dados da SF. IC 95%.}\\
+\endlastfoot
+\cellcolor{gray!10}{Capela do Socorro} & \cellcolor{gray!10}{8.23%} & \cellcolor{gray!10}{5.63%} & \cellcolor{gray!10}{-2.60%} & \cellcolor{gray!10}{Abaixo do IDRGP Alvo}\\
+Campo Limpo & 7.05% & 4.48% & -2.57% & Abaixo do IDRGP Alvo\\
+\cellcolor{gray!10}{Cidade Ademar} & \cellcolor{gray!10}{5.43%} & \cellcolor{gray!10}{2.95%} & \cellcolor{gray!10}{-2.47%} & \cellcolor{gray!10}{Abaixo do IDRGP Alvo}\\
+M'Boi Mirim & 7.68% & 5.31% & -2.37% & Abaixo do IDRGP Alvo\\
+\cellcolor{gray!10}{São Mateus} & \cellcolor{gray!10}{5.78%} & \cellcolor{gray!10}{3.42%} & \cellcolor{gray!10}{-2.35%} & \cellcolor{gray!10}{Abaixo do IDRGP Alvo}\\
+Parelheiros & 4.19% & 2.26% & -1.92% & Abaixo do IDRGP Alvo\\
+\cellcolor{gray!10}{Jaçanã/Tremembé} & \cellcolor{gray!10}{3.62%} & \cellcolor{gray!10}{1.89%} & \cellcolor{gray!10}{-1.73%} & \cellcolor{gray!10}{Abaixo do IDRGP Alvo}\\
+São Miguel Paulista & 4.00% & 2.38% & -1.61% & Abaixo do IDRGP Alvo\\
+\cellcolor{gray!10}{Itaquera} & \cellcolor{gray!10}{4.98%} & \cellcolor{gray!10}{3.57%} & \cellcolor{gray!10}{-1.41%} & \cellcolor{gray!10}{Abaixo do IDRGP Alvo}\\
+Guaianases & 3.11% & 1.75% & -1.35% & Abaixo do IDRGP Alvo\\*
+\end{longtabu}
+\endgroup{}
+
+\newpage
+
+\section{Contexto Demográfico --- Evolução
+Populacional}\label{contexto-demogruxe1fico-evoluuxe7uxe3o-populacional}
+
+A integração dos dados dos Censos IBGE 1950--2022 permite contextualizar
+a pressão por serviços públicos em cada região e fundamentar as metas do
+IVU 2025.
+
+\begingroup\fontsize{10}{12}\selectfont
+
+\begin{longtabu} to \linewidth {>{\raggedright}X>{\raggedright}X>{\raggedright}X>{\raggedright}X>{\raggedright}X}
+\caption{\label{tab:tabela-populacao}Evolução populacional por subprefeitura — Censos IBGE 1980, 2010 e 2022}\\
+\toprule
+Subprefeitura & Pop. 1980 & Pop. 2010 & Pop. 2022 & Var. 2010–2022\\
+\midrule
+\endfirsthead
+\caption[]{Evolução populacional por subprefeitura — Censos IBGE 1980, 2010 e 2022 \textit{(continued)}}\\
+\toprule
+Subprefeitura & Pop. 1980 & Pop. 2010 & Pop. 2022 & Var. 2010–2022\\
+\midrule
+\endhead
+
+\endfoot
+\bottomrule
+\multicolumn{5}{l}{\rule{0pt}{1em}\textit{Fonte: } IBGE, Censos Demográficos. Elaboração: CPMA/SIME/SEPLAN/PMSP.}\\
+\endlastfoot
+\cellcolor{gray!10}{Aricanduva-Formosa-Carrão} & \cellcolor{gray!10}{163.666} & \cellcolor{gray!10}{267.702} & \cellcolor{gray!10}{266.497} & \cellcolor{gray!10}{-0.5%}\\
+Butantã & 285.032 & 428.217 & 468.522 & 9.4%\\
+\cellcolor{gray!10}{Campo Limpo} & \cellcolor{gray!10}{261.334} & \cellcolor{gray!10}{607.105} & \cellcolor{gray!10}{675.598} & \cellcolor{gray!10}{11.3%}\\
+Capela do Socorro & 281.029 & 594.930 & 605.383 & 1.8%\\
+\cellcolor{gray!10}{Casa Verde-Cachoeirinha} & \cellcolor{gray!10}{298.092} & \cellcolor{gray!10}{309.376} & \cellcolor{gray!10}{306.275} & \cellcolor{gray!10}{-1.0%}\\
+Cidade Ademar & 282.707 & 410.998 & 412.804 & 0.4%\\
+\cellcolor{gray!10}{Cidade Tiradentes} & \cellcolor{gray!10}{71.218} & \cellcolor{gray!10}{211.503} & \cellcolor{gray!10}{187.216} & \cellcolor{gray!10}{-11.5%}\\
+Ermelino Matarazzo & 134.502 & 207.603 & 203.874 & -1.8%\\
+\cellcolor{gray!10}{Freguesia-Brasilândia} & \cellcolor{gray!10}{317.019} & \cellcolor{gray!10}{407.245} & \cellcolor{gray!10}{380.513} & \cellcolor{gray!10}{-6.6%}\\
+Guaianases & 110.723 & 284.530 & 276.378 & -2.9%\\
+\cellcolor{gray!10}{Ipiranga} & \cellcolor{gray!10}{398.028} & \cellcolor{gray!10}{463.804} & \cellcolor{gray!10}{480.878} & \cellcolor{gray!10}{3.7%}\\
+Itaim Paulista & 155.000 & 373.112 & 372.134 & -0.3%\\
+\cellcolor{gray!10}{Itaquera} & \cellcolor{gray!10}{426.711} & \cellcolor{gray!10}{523.263} & \cellcolor{gray!10}{501.306} & \cellcolor{gray!10}{-4.2%}\\
+Jabaquara & 196.151 & 223.780 & 214.958 & -3.9%\\
+\cellcolor{gray!10}{Jaçanã-Tremembé} & \cellcolor{gray!10}{176.895} & \cellcolor{gray!10}{291.867} & \cellcolor{gray!10}{283.892} & \cellcolor{gray!10}{-2.7%}\\
+Lapa & 319.806 & 305.526 & 338.347 & 10.7%\\
+\cellcolor{gray!10}{M Boi Mirim} & \cellcolor{gray!10}{271.214} & \cellcolor{gray!10}{563.305} & \cellcolor{gray!10}{570.809} & \cellcolor{gray!10}{1.3%}\\
+Mooca & 434.502 & 343.980 & 354.316 & 3.0%\\
+\cellcolor{gray!10}{Parelheiros} & \cellcolor{gray!10}{36.150} & \cellcolor{gray!10}{139.441} & \cellcolor{gray!10}{165.138} & \cellcolor{gray!10}{18.4%}\\
+Penha & 405.012 & 472.249 & 469.766 & -0.5%\\
+\cellcolor{gray!10}{Perus-Anhangüera} & \cellcolor{gray!10}{41.546} & \cellcolor{gray!10}{146.046} & \cellcolor{gray!10}{163.083} & \cellcolor{gray!10}{11.7%}\\
+Pinheiros & 378.617 & 289.743 & 285.815 & -1.4%\\
+\cellcolor{gray!10}{Pirituba-Jaraguá} & \cellcolor{gray!10}{249.552} & \cellcolor{gray!10}{437.592} & \cellcolor{gray!10}{480.218} & \cellcolor{gray!10}{9.7%}\\
+Santana-Tucuruvi & 342.815 & 324.815 & 318.913 & -1.8%\\
+\cellcolor{gray!10}{Santo Amaro} & \cellcolor{gray!10}{239.371} & \cellcolor{gray!10}{238.025} & \cellcolor{gray!10}{272.332} & \cellcolor{gray!10}{14.4%}\\
+Sapopemba & 55.750 & 284.524 & 266.715 & -6.3%\\
+\cellcolor{gray!10}{São Mateus} & \cellcolor{gray!10}{128.532} & \cellcolor{gray!10}{426.794} & \cellcolor{gray!10}{453.527} & \cellcolor{gray!10}{6.3%}\\
+São Miguel & 108.246 & 370.100 & 344.609 & -6.9%\\
+\cellcolor{gray!10}{Sé} & \cellcolor{gray!10}{526.171} & \cellcolor{gray!10}{431.106} & \cellcolor{gray!10}{423.536} & \cellcolor{gray!10}{-1.8%}\\
+Vila Maria-Vila Guilherme & 362.502 & 297.713 & 276.069 & -7.3%\\
+\cellcolor{gray!10}{Vila Mariana} & \cellcolor{gray!10}{351.605} & \cellcolor{gray!10}{344.632} & \cellcolor{gray!10}{337.654} & \cellcolor{gray!10}{-2.0%}\\
+Vila Prudente & 190.791 & 246.589 & 243.728 & -1.2%\\*
+\end{longtabu}
+\endgroup{}
+
+\newpage
+
+\section{Nota Metodológica}\label{nota-metodoluxf3gica}
+
+\subsection{O Índice de Distribuição Regional do Gasto Público
+(IDRGP)}\label{o-uxedndice-de-distribuiuxe7uxe3o-regional-do-gasto-puxfablico-idrgp}
+
+O IDRGP mensura a proporção do gasto público municipal efetivamente
+executada em cada subprefeitura em relação à proporção esperada com base
+no grau de vulnerabilidade social do território.
+
+\textbf{Fórmula geral:}
+
+\[\text{IDRGP}_i = \frac{G_i}{\sum G_i}\]
+
+Onde \(G_i\) é o valor executado na subprefeitura \(i\) e \(\sum G_i\) é
+o total municipal regionalizado no período.
+
+\[\Delta_i = \text{IDRGP}_{i}^{\text{Real}} - \text{IDRGP}_{i}^{\text{Alvo}}\]
+
+Onde \(\text{IDRGP}_{i}^{\text{Alvo}}\) é a participação proporcional do
+IVU 2025 da subprefeitura \(i\) no total municipal.
+
+\subsection{Classificação
+Estatística}\label{classificauxe7uxe3o-estatuxedstica}
+
+As subprefeituras são classificadas em três categorias, com base no
+intervalo de confiança de 95\% do teste aplicado:
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{longtable}[]{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.5238}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 2\tabcolsep) * \real{0.4762}}@{}}
+\toprule\noalign{}
+\begin{minipage}[b]{\linewidth}\raggedright
+Categoria
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Critério
+\end{minipage} \\
+\midrule\noalign{}
+\endhead
+\bottomrule\noalign{}
+\endlastfoot
+\textbf{Acima do Alvo} & \(\Delta_i\) superior ao limite superior do IC
+95\% \\
+\textbf{Dentro do Alvo} & \(\Delta_i\) dentro do IC 95\% \\
+\textbf{Abaixo do Alvo} & \(\Delta_i\) inferior ao limite inferior do IC
+95\% \\
+\end{longtable}
+}
+
+O teste de normalidade de Kolmogorov-Smirnov determina se é aplicado o
+\textbf{teste t pareado} (distribuição normal) ou o \textbf{teste de
+Wilcoxon} (distribuição não-normal).
+
+\subsection{Dados Utilizados}\label{dados-utilizados}
+
+\begin{itemize}
+\tightlist
+\item
+  Execução orçamentária regionalizada: Secretaria Municipal de Fazenda
+  (SF), anos 2022 a 2025;
+\item
+  IVU 2025: Índice de Vulnerabilidade Urbana, elaborado por SEPLAN/CPMA;
+\item
+  Shapefile das subprefeituras: GeoSampa, Prefeitura de São Paulo;
+\item
+  Dados populacionais: IBGE, Censos Demográficos 1950--2022.
+\end{itemize}
+
+\subsection{Limitações}\label{limitauxe7uxf5es}
+
+Os valores analisados correspondem à \textbf{liquidação orçamentária}.
+Ações classificadas como \emph{Supra} (não regionalizáveis) são
+excluídas da base de cálculo do IDRGP. A taxa de regionalização varia
+entre anos e ações, sendo apresentada como indicador de qualidade da
+base na Seção 4.
+
+\newpage
+
+\thispagestyle{empty}
+
+\vspace*{\fill}
+
+\begin{center}
+
+\textcolor{pmsp}{\rule{10cm}{1.5pt}}
+
+\vspace{0.8cm}
+
+{\large \textbf{Coordenadoria de Planejamento, Monitoramento e Avaliação}}\\[0.2cm]
+{\normalsize Secretária Executiva de Informações e Monitoramento Estratégicos (SIME)}\\[0.1cm]
+{\normalsize Secretaria Municipal de Planejamento Urbano (SEPLAN)}\\[0.1cm]
+{\normalsize Prefeitura do Município de São Paulo}
+
+\vspace{0.6cm}
+
+{\small maio de 2026 | São Paulo — SP}\\[0.2cm]
+{\small Documento elaborado em ambiente reproduzível (R/RMarkdown).}\\[0.1cm]
+{\small Para informações: \texttt{cpma@seplan.prefeitura.sp.gov.br}}
+
+\vspace{0.8cm}
+
+\textcolor{pmsp}{\rule{10cm}{1.5pt}}
+
+\end{center}
+
+\vspace*{\fill}
+
+\end{document}

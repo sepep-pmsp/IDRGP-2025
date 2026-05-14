@@ -604,6 +604,8 @@ tabela_inconsistencias %>%
 ```
 
 
+
+
 ## 9. Análise da regionalização das ações orçamentárias
 
 Este bloco examina como o orçamento está distribuído territorialmente dentro de cada ação governamental.
@@ -1346,6 +1348,10 @@ imprimir_analise_ano(2024)
 ```{r analise_2025, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
 imprimir_analise_ano(2025)
 ```
+
+
+
+
 
 ## 16.5. Consolidação histórica (2022–2025) + teste do ciclo
 
