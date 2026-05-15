@@ -101,6 +101,7 @@ library(ggplot2)     # gráficos
 library(knitr)       # exibir tabelas
 library(dplyr)
 library(stringi)     # remoção e padronização de acentos
+library(rstatix)     # estatistica para R      
 
 ```
 
@@ -220,7 +221,7 @@ norm_name <- function(x) {
     # Itaim — forma abreviada
     "itaim"                            = "itaimpaulista",
 
-    # Jaboatao — evita mapeamento errado se ocorrer
+    # Jaboatao — evitar mapeamento errado se ocorrer
     "jabaquara"                        = "jabaquara"
   )
 
@@ -511,6 +512,7 @@ knitr::kable(
   col.names = c("Subprefeitura", "IDRGP Alvo"),
   digits = 4, caption = "IDRGP Alvo 2025 (baseado no IVU 2024)"
 )
+
 ```
 
 # 8. Importação e consolidação das bases orçamentárias

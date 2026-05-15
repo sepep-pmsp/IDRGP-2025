@@ -83,13 +83,13 @@ local({
   # 5. Locale seguro para Windows com suporte a caracteres pt-BR
   #    Previne erros de conversão de multibyte em sistemas com locale inglês
   # ---------------------------------------------------------------------------
-  tryCatch(
+  invisible(tryCatch(
     Sys.setlocale("LC_CTYPE", "Portuguese_Brazil.UTF-8"),
     error = function(e)
       tryCatch(
         Sys.setlocale("LC_CTYPE", "Portuguese_Brazil.1252"),
         error = function(e) NULL
       )
-  )
+  ))
 
 })
