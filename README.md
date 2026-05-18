@@ -1,4 +1,4 @@
-# IDRGP 2025 — Relatórios, Mapas e GitHub Pages
+# IDRGP 2025 — Relatórios, Mapas e Infográficos
 
 Repositório oficial do **IDRGP 2025**, reunindo processamento, análise e publicação de:
 
@@ -9,7 +9,7 @@ Repositório oficial do **IDRGP 2025**, reunindo processamento, análise e publi
 * Arquivos geoespaciais
 * Página pública no GitHub Pages
 
-Projeto desenvolvido para apoio à comunicação técnica e institucional da **SEPLAN/CPMA**.
+Projeto desenvolvido para apoio à comunicação técnica e institucional da **SEPLAN/SIME/CPMA**.
 
 ---
 
