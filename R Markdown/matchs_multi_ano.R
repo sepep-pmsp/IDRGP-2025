@@ -7,12 +7,23 @@ library(stringi)
 # -------------------------------------------------------------------------
 # 1. CONFIGURAÇÕES DE CAMINHOS
 # -------------------------------------------------------------------------
-caminho_dados <- "dados"
-output_dir <- "outputs_25_DA/tabelas_25_DA"
+# Detecção dinâmica dos caminhos de entrada e saída conforme o diretório de trabalho
+if (dir.exists("dados")) {
+  caminho_dados <- "dados"
+  output_dir <- "outputs_25_DA/tabelas_25_DA"
+} else if (dir.exists("R Markdown/dados")) {
+  caminho_dados <- "R Markdown/dados"
+  output_dir <- "R Markdown/outputs_25_DA/tabelas_25_DA"
+} else {
+  caminho_dados <- "dados"
+  output_dir <- "outputs_25_DA/tabelas_25_DA"
+}
 
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
+
+arquivo_ref_2024 <- file.path(caminho_dados, "Despesas_IDRGP_2024.xlsx")
 
 # -------------------------------------------------------------------------
 # 2. FUNÇÕES AUXILIARES DE TRATAMENTO E COMPATIBILIZAÇÃO
@@ -51,7 +62,7 @@ obter_caminho_base <- function(ano) {
   return(file.path(caminho_dados, sprintf("base_%d_SEPLAN_IDRGP_2025.xlsx", ano)))
 }
 
-# Função para ler, limpar e padronizar as colunas de cada base anual de forma defensiva
+# Função para ler, limpar e padronizar as colunas de cada base anual (mantendo todas as linhas de detalhe)
 ler_e_padronizar <- function(caminho_arquivo, ano) {
   cat(sprintf("Lendo base do ano %d (%s)...\n", ano, basename(caminho_arquivo)))
   
@@ -126,65 +137,88 @@ ler_e_padronizar <- function(caminho_arquivo, ano) {
 }
 
 # -------------------------------------------------------------------------
-# 3. LEITURA E PREPARAÇÃO DAS BASES (2022 A 2025)
+# 3. LEITURA DA REFERÊNCIA FIXA (DESPESAS_IDRGP_2024.XLSX)
+# -------------------------------------------------------------------------
+
+cat(sprintf("Lendo base de referência fixa (2024) em %s...\n", arquivo_ref_2024))
+if (!file.exists(arquivo_ref_2024)) {
+  stop(sprintf("Erro: O arquivo de referência fixa não foi encontrado em: %s", arquivo_ref_2024))
+}
+
+df_ref_2024 <- read_excel(arquivo_ref_2024) |>
+  clean_names() |>
+  select(codigo_proj_ativ, descricao_proj_ativ) |>
+  mutate(
+    codigo_proj_ativ = as.character(codigo_proj_ativ) |> trimws() |> str_squish(),
+    descricao_proj_ativ = as.character(descricao_proj_ativ) |> trimws() |> str_squish()
+  ) |>
+  distinct()
+
+# -------------------------------------------------------------------------
+# 4. LEITURA E PREPARAÇÃO DAS BASES (2022 A 2025)
 # -------------------------------------------------------------------------
 
 anos <- c(2022, 2023, 2024, 2025)
 caminhos_arquivos <- map_chr(anos, obter_caminho_base)
 
-# Leitura e padronização de cada arquivo
+# Leitura e padronização de cada arquivo anual
 bases_anuais <- map2(caminhos_arquivos, anos, ler_e_padronizar) |> 
   set_names(paste0("df_", anos))
 
-# Extrai a base de referência (2025)
-df_2025 <- bases_anuais$df_2025
-
-# Cria o catálogo de ações únicas de 2025 (referência para o match)
-df_ref_2025 <- df_2025 |> 
-  select(codigo_proj_ativ, descricao_proj_ativ) |> 
-  distinct() |> 
-  filter(!is.na(codigo_proj_ativ) & codigo_proj_ativ != "")
-
 # -------------------------------------------------------------------------
-# 4. LÓGICA DE COMPATIBILIZAÇÃO CONTRA A BASE DE REFERÊNCIA (2025)
+# 5. LÓGICA DO MATCH CONTRA A REFERÊNCIA FIXA (DE 2024)
 # -------------------------------------------------------------------------
 
-compatibilizar_com_2025 <- function(df_ano, df_ref) {
-  # Caso o ano seja o próprio ano de referência (2025), o match é trivial
-  if (unique(df_ano$ano) == 2025) {
-    return(
-      df_ano |> 
-        mutate(
-          status_match = "match_codigo",
-          codigo_proj_ativ_2025 = codigo_proj_ativ,
-          descricao_proj_ativ_2025 = descricao_proj_ativ
-        )
-    )
-  }
-  
-  # Join 1: Tenta correspondência por código_proj_ativ
-  match_codigo <- df_ano |> 
+compatibilizar_com_referencia <- function(df_ano, df_ref) {
+  # Join 1: Tenta correspondência por codigo_proj_ativ (referência na esquerda, base anual na direita)
+  match_codigo <- df_ref |> 
     left_join(
-      df_ref |> select(codigo_proj_ativ, desc_2025 = descricao_proj_ativ),
+      df_ano |> 
+        select(
+          codigo_proj_ativ,
+          desc_ano = descricao_proj_ativ,
+          valor_empenhado,
+          valor_detalhamento_acao,
+          tipo_regionalizacao,
+          subprefeitura,
+          ano
+        ),
       by = "codigo_proj_ativ"
     ) |> 
     mutate(
-      status_match = if_else(!is.na(desc_2025), "match_codigo", NA_character_)
+      status_match = if_else(!is.na(desc_ano), "match_codigo", NA_character_)
     )
   
-  # Isola o que não deu match por código para a segunda rodada
+  # Isola o que não deu match por código para tentar por descrição
   sem_match_codigo <- match_codigo |> 
     filter(is.na(status_match)) |> 
-    select(-desc_2025, -status_match)
+    select(
+      -desc_ano,
+      -valor_empenhado,
+      -valor_detalhamento_acao,
+      -tipo_regionalizacao,
+      -subprefeitura,
+      -ano,
+      -status_match
+    )
   
   # Join 2: Tenta correspondência por descricao_proj_ativ
   match_descricao <- sem_match_codigo |> 
     left_join(
-      df_ref |> select(cod_2025 = codigo_proj_ativ, descricao_proj_ativ),
+      df_ano |> 
+        select(
+          cod_ano = codigo_proj_ativ,
+          descricao_proj_ativ,
+          valor_empenhado,
+          valor_detalhamento_acao,
+          tipo_regionalizacao,
+          subprefeitura,
+          ano
+        ),
       by = "descricao_proj_ativ"
     ) |> 
     mutate(
-      status_match = if_else(!is.na(cod_2025), "match_descricao", "sem_match")
+      status_match = if_else(!is.na(cod_ano), "match_descricao", "sem_match")
     )
   
   # Consolidação dos dois fluxos de join
@@ -192,60 +226,76 @@ compatibilizar_com_2025 <- function(df_ano, df_ref) {
     # Registros que bateram por código
     match_codigo |> 
       filter(!is.na(status_match)) |> 
-      mutate(
-        codigo_proj_ativ_2025 = codigo_proj_ativ,
-        descricao_proj_ativ_2025 = desc_2025
+      rename(
+        codigo_proj_ativ_2024 = codigo_proj_ativ,
+        descricao_proj_ativ_2024 = descricao_proj_ativ,
+        descricao_proj_ativ_ano = desc_ano
       ) |> 
-      select(-desc_2025),
+      mutate(codigo_proj_ativ_ano = codigo_proj_ativ_2024),
     
-    # Registros que foram para o match por descrição (ou ficaram sem correspondência)
+    # Registros que foram para o match por descrição (ou ficaram sem_match)
     match_descricao |> 
-      mutate(
-        codigo_proj_ativ_2025 = if_else(status_match == "match_descricao", cod_2025, NA_character_),
-        descricao_proj_ativ_2025 = if_else(status_match == "match_descricao", descricao_proj_ativ, NA_character_)
+      rename(
+        codigo_proj_ativ_2024 = codigo_proj_ativ,
+        descricao_proj_ativ_2024 = descricao_proj_ativ,
+        codigo_proj_ativ_ano = cod_ano
       ) |> 
-      select(-cod_2025)
+      mutate(
+        descricao_proj_ativ_ano = if_else(
+          status_match == "match_descricao",
+          descricao_proj_ativ_2024,
+          NA_character_
+        )
+      )
   )
+  
+  # Preenche o ano de origem caso venha como NA nos registros sem_match
+  ano_corrente <- unique(df_ano$ano)
+  df_conferido <- df_conferido |> 
+    mutate(ano = if_else(is.na(ano), as.integer(ano_corrente), as.integer(ano)))
   
   return(df_conferido)
 }
 
-# Aplica a compatibilização para cada ano
-bases_compatibilizadas <- map(bases_anuais, compatibilizar_com_2025, df_ref = df_ref_2025)
+# Executa a compatibilização para cada um dos quatro anos
+bases_compatibilizadas <- map(bases_anuais, compatibilizar_com_referencia, df_ref = df_ref_2024)
 
 # Consolida todas as bases em uma única tabela
 tabela_consolidada_raw <- bind_rows(bases_compatibilizadas)
 
 # -------------------------------------------------------------------------
-# 5. FILTRAGEM E ORGANIZAÇÃO FINAL
+# 6. FILTRAGEM E ORGANIZAÇÃO FINAL
 # -------------------------------------------------------------------------
 
-# Mantém apenas as ações que são "Despesa Regionalizável" (com comparação robusta sem acentos)
+# Mantém apenas registros "Despesa Regionalizável" ou sem_match (que são ações da ref não encontradas)
 tabela_consolidada <- tabela_consolidada_raw |> 
-  filter(normalizar_texto(tipo_regionalizacao) == "despesa regionalizavel") |> 
+  filter(
+    status_match == "sem_match" | 
+    normalizar_texto(tipo_regionalizacao) == "despesa regionalizavel"
+  ) |> 
   select(
     ano,
-    codigo_proj_ativ,
-    descricao_proj_ativ,
-    codigo_proj_ativ_2025,
-    descricao_proj_ativ_2025,
+    codigo_proj_ativ_2024,
+    descricao_proj_ativ_2024,
+    codigo_proj_ativ_ano,
+    descricao_proj_ativ_ano,
     valor_empenhado,
     valor_detalhamento_acao,
     tipo_regionalizacao,
     subprefeitura,
     status_match
   ) |> 
-  arrange(ano, codigo_proj_ativ, subprefeitura)
+  arrange(ano, codigo_proj_ativ_2024, subprefeitura)
 
 # -------------------------------------------------------------------------
-# 6. RESUMO ESTATÍSTICO DOS TOTALIZADORES
+# 7. RESUMO ESTATÍSTICO NO CONSOLE
 # -------------------------------------------------------------------------
 
 resumo_estatistico <- tabela_consolidada |> 
   group_by(ano) |> 
   summarise(
     total_registros = n(),
-    acoes_unicas = n_distinct(codigo_proj_ativ),
+    acoes_unicas_da_ref_encontradas = n_distinct(codigo_proj_ativ_ano[status_match != "sem_match"]),
     valor_total_empenhado = sum(valor_empenhado, na.rm = TRUE),
     valor_total_detalhamento = sum(valor_detalhamento_acao, na.rm = TRUE),
     qtd_match_codigo = sum(status_match == "match_codigo"),
@@ -254,14 +304,13 @@ resumo_estatistico <- tabela_consolidada |>
     .groups = "drop"
   )
 
-cat("\n--- Resumo Estatístico por Ano (Apenas Despesa Regionalizável) ---\n")
+cat("\n--- Resumo Estatístico por Ano (Filtrado por Despesa Regionalizável / Sem Match) ---\n")
 print(resumo_estatistico)
 
 # -------------------------------------------------------------------------
-# 7. EXPORTAÇÃO EXCEL COM TRÊS ABAS
+# 8. EXPORTAÇÃO EXCEL COM TRÊS ABAS
 # -------------------------------------------------------------------------
 
-# Separação dos conjuntos de dados
 tabela_completa <- tabela_consolidada
 tabela_matches  <- tabela_consolidada |> filter(status_match %in% c("match_codigo", "match_descricao"))
 tabela_sem_match <- tabela_consolidada |> filter(status_match == "sem_match")
@@ -278,5 +327,13 @@ write_xlsx(
   ),
   path = caminho_exportacao
 )
+
+
+# Possíveis razões para "sem_match":
+# Mudança de código: O projeto mudou de código de um ano para outro (ex: era 1001 em 2024, mas em 2022 era 2001)
+# Projeto novo: O projeto foi criado depois daquele ano (ex: projeto iniciou em 2024, não existia em 2022)
+# Projeto encerrado: Existia na referência de 2024 mas já foi concluído
+# Erro de digitação/nomenclatura: Código ou descrição com pequenas variações
+# Reestruturação orçamentária: O projeto foi desmembrado ou agrupado
 
 cat("Exportação concluída com sucesso!\n")

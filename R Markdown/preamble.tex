@@ -1,0 +1,47 @@
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setmainlanguage{portuguese}
+\usepackage{float}
+\floatplacement{figure}{H}
+\floatplacement{table}{H}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{setspace}
+\usepackage{indentfirst}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{microtype}
+\usepackage{geometry}
+\usepackage{ragged2e}
+\usepackage{etoolbox}
+
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\definecolor{pmsp}{RGB}{0, 102, 163}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[R]{\footnotesize\textcolor{gray}{IDRGP 2025 — CPMA/SIME/SEPLAN/PMSP}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\titleformat{\section}{\large\bfseries}{}{0em}{}[\vspace{0.2em}\hrule\vspace{0.5em}]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
+\titleformat{\subsubsection}{\normalsize\itshape}{}{0em}{}
+\titlespacing{\section}{0pt}{1.5em}{0.8em}
+\titlespacing{\subsection}{0pt}{1em}{0.5em}
+
+\captionsetup[figure]{font=small, labelfont=bf, justification=centering, position=below}
+\captionsetup[table]{font=small, labelfont=bf, justification=centering, position=above}
+
+\hypersetup{colorlinks=true, linkcolor=pmsp, urlcolor=pmsp, citecolor=pmsp}
+
+\setlength{\parindent}{1.25cm}
+\setlength{\parskip}{0pt}

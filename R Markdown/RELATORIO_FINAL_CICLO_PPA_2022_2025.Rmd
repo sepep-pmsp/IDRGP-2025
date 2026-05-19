@@ -1,0 +1,1354 @@
+---
+title: "IDRGP 2022–2025: Ciclo PPA"
+subtitle: "Execução Orçamentária Regionalizável — Subprefeituras de São Paulo"
+author: "CPMA/SIME/SEPLAN/PMSP"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: hide
+    df_print: paged
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+    fig_caption: true
+    fig_width: 8
+    fig_height: 6
+    includes:
+      in_header: preamble.tex
+---
+
+```{r setup, include=FALSE}
+# ============================================================================
+# CHUNK 1: SETUP COMPLETO E PACOTES
+# ============================================================================
+
+library(tidyverse)
+library(readxl)
+library(writexl)
+library(openxlsx)
+library(janitor)
+library(sf)
+library(tmap)
+library(tmaptools)
+library(ggplot2)
+library(treemapify)
+library(patchwork)
+library(scales)
+library(stringi)
+library(stringr)
+library(DT)
+library(knitr)
+library(kableExtra)
+
+cores_status <- c(
+  "Abaixo do IDRGP Alvo" = "#d97a0f",
+  "Dentro do IDRGP Alvo" = "#0ea1cf",
+  "Acima do IDRGP Alvo"  = "#1A1442"
+)
+
+cores_top10_cesta <- c(
+  "#0ea1cf", "#d97a0f", "#1A1442", "#2ecc71", "#e74c3c",
+  "#9b59b6", "#f39c12", "#1abc9c", "#e67e22", "#3498db",
+  "#bdc3c7"   # FIXO para "Demais ações"
+)
+
+tema_idrgp <- theme_minimal(base_size = 9) +
+  theme(
+    text = element_text(family = "sans"),
+    plot.title = element_text(face = "bold", size = 12, color = "#1a1a2e"),
+    plot.subtitle = element_text(size = 9, color = "#666666"),
+    plot.caption = element_text(size = 7, color = "#999999", hjust = 1),
+    legend.position = "bottom",
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+
+ggplot2::theme_set(tema_idrgp)
+
+pasta_saida <- file.path(
+  "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown",
+  "resultados/Produtos_Cesta_2026"
+)
+
+for (subpasta in c("mapas", "graficos", "tabelas", "treemaps")) {
+  dir.create(file.path(pasta_saida, subpasta), recursive = TRUE, showWarnings = FALSE)
+}
+```
+
+# Introdução e Metodologia
+
+Este documento apresenta a análise da Execução Orçamentária Regionalizável para o ciclo PPA 2022-2025.
+
+```{r carga_dados, message=FALSE, warning=FALSE}
+# ============================================================================
+# CHUNK 2: CARGA DE DADOS
+# ============================================================================
+
+caminho_tabela <- file.path(
+  "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown",
+  "dados/tabela_conferencia_multi_ano.xlsx"
+)
+
+if (file.exists(caminho_tabela)) {
+  dados_brutos <- read_excel(caminho_tabela) |> clean_names()
+  
+  if (!"valor_empenhado" %in% names(dados_brutos)) {
+    if ("valor_detalhamento_acao" %in% names(dados_brutos)) {
+      dados_brutos <- dados_brutos |> rename(valor_empenhado = valor_detalhamento_acao)
+    } else {
+      dados_brutos <- dados_brutos |> mutate(valor_empenhado = NA_real_)
+    }
+  }
+} else {
+  warning("⚠️ Arquivo de dados não encontrado. Utilizando dummy.")
+  dados_brutos <- data.frame(
+    ano = rep(2022:2025, each=32),
+    subprefeitura = rep(paste("Subpref", 1:32), 4),
+    valor_empenhado = runif(128, 1e7, 1e9),
+    codigo_proj_ativ = "1234",
+    descricao_proj_ativ = "Acao de Teste"
+  )
+}
+
+# ORDEM PADRONIZADA DAS SUBPREFEITURAS (Ordem Alfabética)
+subprefeituras_ordem <- sort(unique(dados_brutos$subprefeitura))
+dados_brutos <- dados_brutos |>
+  mutate(subprefeitura = factor(subprefeitura, levels = subprefeituras_ordem))
+
+# CARGA DO SHAPEFILE
+caminho_shape <- file.path(
+  "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown",
+  "dados/SIRGAS_SHP_subprefeitura.shp"
+)
+
+if (!file.exists(caminho_shape)) {
+  # Tentar encontrar qualquer .shp contendo 'subprefeitura' na pasta dados
+  pasta_dados <- dirname(caminho_shape)
+  arquivos_shp <- list.files(pasta_dados, pattern = "subprefeitura.*\\.shp$", ignore.case = TRUE, full.names = TRUE)
+  
+  if (length(arquivos_shp) == 0) {
+    arquivos_shp <- list.files(pasta_dados, pattern = "\\.shp$", full.names = TRUE)
+  }
+  
+  if (length(arquivos_shp) > 0) {
+    caminho_shape <- arquivos_shp[1]
+    cat("📂 Shapefile alternativo encontrado:", basename(caminho_shape), "\n")
+  } else {
+    stop("❌ NENHUM shapefile (.shp) encontrado na pasta: ", pasta_dados)
+  }
+}
+
+sf_sp <- st_read(caminho_shape, quiet = TRUE) |> clean_names()
+cat("✅ Shapefile carregado:", nrow(sf_sp), "feições\n")
+
+# Identificar e renomear coluna de nome do shapefile
+padroes_nome <- c("sp_nome", "nm_subpref", "subprefei", "nome", "sub", "NOME", "SUBPREFEI")
+col_nome <- intersect(padroes_nome, names(sf_sp))[1]
+if (is.na(col_nome)) {
+  col_nome <- names(sf_sp)[sapply(sf_sp, is.character)][1]
+}
+sf_sp <- sf_sp |> rename(sp_nome = all_of(col_nome))
+
+cat("📋 Colunas:", paste(names(sf_sp), collapse = ", "), "\n")
+
+# ============================================================================
+# FILTRAGEM PELA CESTA DE AÇÕES SELECIONADAS
+# ============================================================================
+
+# Carregar tabela oficial da cesta
+tabela_cesta <- read_excel(
+  file.path(
+    "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown",
+    "dados/Despesas_IDRGP_2024.xlsx"
+  )
+) |>
+  clean_names() |>
+  mutate(codigo_proj_ativ = as.character(codigo_proj_ativ) |> str_trim())
+
+cat("📋 Cesta oficial carregada:", nrow(tabela_cesta), "ações\n")
+
+# Aplicar filtro da cesta
+dados_cesta <- dados_brutos |>
+  filter(codigo_proj_ativ %in% tabela_cesta$codigo_proj_ativ)
+
+# Auditoria imediata
+cat("========================================\n")
+cat("🔍 AUDITORIA DA FILTRAGEM\n")
+cat("========================================\n")
+cat("Ações nos dados brutos:       ", n_distinct(dados_brutos$codigo_proj_ativ), "\n")
+cat("Ações na cesta oficial:       ", n_distinct(tabela_cesta$codigo_proj_ativ), "\n")
+cat("Ações após filtro (dados_cesta):", n_distinct(dados_cesta$codigo_proj_ativ), "\n")
+
+# Verificar se há ações na cesta que NÃO estão nos dados
+faltantes <- anti_join(
+  tabela_cesta |> select(codigo_proj_ativ),
+  dados_cesta |> select(codigo_proj_ativ) |> distinct(),
+  by = "codigo_proj_ativ"
+)
+
+if (nrow(faltantes) > 0) {
+  cat("⚠️ Ações da cesta SEM dados na base:\n")
+  print(faltantes)
+} else {
+  cat("✅ Todas as ações da cesta têm dados na base\n")
+}
+
+# Verificar se NÃO há ações externas nos dados_cesta
+sobrando <- anti_join(
+  dados_cesta |> select(codigo_proj_ativ) |> distinct(),
+  tabela_cesta |> select(codigo_proj_ativ),
+  by = "codigo_proj_ativ"
+)
+
+if (nrow(sobrando) > 0) {
+  cat("❌ ERRO: Ações externas à cesta encontradas em dados_cesta:\n")
+  print(sobrando)
+  stop("Filtragem incorreta. Verifique o join.")
+} else {
+  cat("✅ Nenhuma ação externa à cesta em dados_cesta\n")
+}
+
+# Totais financeiros
+valor_bruto <- sum(dados_brutos$valor_empenhado, na.rm = TRUE)
+valor_cesta <- sum(dados_cesta$valor_empenhado, na.rm = TRUE)
+cat("----------------------------------------\n")
+cat("Valor total (dados brutos):    R$", format(valor_bruto, big.mark = "."), "\n")
+cat("Valor total (cesta):           R$", format(valor_cesta, big.mark = "."), "\n")
+cat("% preservado:                  ", round(valor_cesta/valor_bruto*100, 1), "%\n")
+cat("========================================\n")
+```
+
+```{r preparar_dados_testes, message=FALSE, warning=FALSE}
+# ============================================================================
+# CHUNK 3: PREPARAÇÃO DOS DADOS PARA TESTES ESTATÍSTICOS
+# ============================================================================
+
+dados_testes <- dados_cesta |>
+  group_by(subprefeitura, ano) |>
+  summarise(
+    valor_total = sum(valor_empenhado, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  group_by(ano) |>
+  mutate(
+    percentual_liquidado = valor_total / sum(valor_total, na.rm=TRUE) * 100,
+    percentual_referencia = 100 / 32
+  ) |>
+  ungroup()
+
+# Função de padronização (REMOVE acentos, prefixos, espaços e caracteres especiais)
+padronizar_nome <- function(x) {
+  x <- as.character(x)
+  # Transliteração Latin-ASCII para remover acentos
+  x <- stringi::stri_trans_general(x, "Latin-ASCII")
+  x <- x |>
+    str_to_lower() |>
+    str_squish() |>
+    str_replace_all("^subprefeitura de ", "") |>
+    str_replace_all("^subprefeitura ", "") |>
+    str_replace_all("[^a-z0-9]", "")
+  
+  # Padronizar nomes discrepantes
+  x <- case_when(
+    x %in% c("perus", "anhanguera", "perusanhanguera") ~ "perus",
+    x %in% c("saomiguel", "saomiguelpaulista") ~ "saomiguel",
+    x %in% c("itaim", "itaimpaulista") ~ "itaim",
+    x %in% c("cidadeademar", "ademar") ~ "cidadeademar",
+    x %in% c("mboimirim", "m boi mirim") ~ "mboimirim",
+    TRUE ~ x
+  )
+  return(x)
+}
+
+# Aplicar nos dados
+dados_testes <- dados_testes |>
+  mutate(subprefeitura_pad = padronizar_nome(subprefeitura))
+
+# Aplicar no shapefile
+sf_sp <- sf_sp |>
+  mutate(sp_nome_pad = padronizar_nome(sp_nome))
+
+# Verificar correspondência
+nomes_dados <- unique(dados_testes$subprefeitura_pad)
+nomes_shape <- unique(sf_sp$sp_nome_pad)
+
+cat("📊 Subprefeituras nos dados:", length(nomes_dados), "\n")
+cat("📊 Subprefeituras no shapefile:", length(nomes_shape), "\n")
+
+# Verificar quais NÃO têm correspondência
+sem_match <- setdiff(nomes_dados, nomes_shape)
+if (length(sem_match) > 0) {
+  warning("⚠️ Subprefeituras sem correspondência no shapefile:")
+  print(sem_match)
+}
+```
+
+```{r aplicar_testes_estatisticos, message=FALSE, warning=FALSE}
+# ============================================================================
+# CHUNK 4: APLICAÇÃO DOS TESTES ESTATÍSTICOS
+# ============================================================================
+
+resultados_testes <- list()
+
+for (ano_atual in c(2022, 2023, 2024, 2025)) {
+  dados_ano <- dados_testes |> filter(ano == ano_atual)
+  if (nrow(dados_ano) == 0) next
+  
+  teste <- NULL
+  if (ano_atual %in% c(2022, 2023)) {
+    teste <- tryCatch(t.test(dados_ano$percentual_referencia, dados_ano$percentual_liquidado, paired = TRUE), error = function(e) NULL)
+  } else if (ano_atual == 2024) {
+    teste <- tryCatch(wilcox.test(dados_ano$percentual_referencia, dados_ano$percentual_liquidado, paired = TRUE), error = function(e) NULL)
+  } else if (ano_atual == 2025) {
+    teste <- tryCatch(ks.test(dados_ano$percentual_referencia, dados_ano$percentual_liquidado), error = function(e) NULL)
+  }
+  
+  if (!is.null(teste) && "p.value" %in% names(teste)) {
+    dados_ano <- dados_ano |>
+      mutate(
+        p_valor = teste$p.value,
+        categoria = case_when(
+          p_valor < 0.05 & percentual_liquidado < percentual_referencia ~ "Abaixo do IDRGP Alvo",
+          p_valor < 0.05 & percentual_liquidado > percentual_referencia ~ "Acima do IDRGP Alvo",
+          TRUE ~ "Dentro do IDRGP Alvo"
+        )
+      )
+  } else {
+    dados_ano <- dados_ano |> mutate(p_valor = NA, categoria = "Dentro do IDRGP Alvo")
+  }
+  resultados_testes[[as.character(ano_atual)]] <- dados_ano
+}
+
+dados_classificados <- bind_rows(resultados_testes) |>
+  mutate(subprefeitura = factor(subprefeitura, levels = subprefeituras_ordem))
+```
+
+```{r carga_ivu, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# CARGA DO IVU (Índice de Vulnerabilidade Urbana)
+# ============================================================================
+
+caminho_ivu <- file.path(
+  "C:/Users/d954257/OneDrive - rede.sp/Área de Trabalho/IDRGP/IDRGP-2025/R Markdown",
+  "dados/ivu_subprefeituras_2025.xlsx"
+)
+
+if (file.exists(caminho_ivu)) {
+  ivu_raw <- read_excel(caminho_ivu) |> clean_names()
+  
+  col_nome_ivu <- intersect(c("nome_subpref", "subprefeitura", "nome_subprefeitura"), names(ivu_raw))[1]
+  col_valor_ivu <- intersect(c("ivu_geral", "ivu", "indice_ivu"), names(ivu_raw))[1]
+  
+  if (is.na(col_nome_ivu) || is.na(col_valor_ivu)) {
+    warning("⚠️ Colunas esperadas do IVU não encontradas no arquivo.")
+    ivu_df <- NULL
+  } else {
+    ivu_df <- ivu_raw |>
+      transmute(
+        subprefeitura = .data[[col_nome_ivu]],
+        ivu = suppressWarnings(as.numeric(.data[[col_valor_ivu]]))
+      ) |>
+      mutate(
+        subprefeitura_pad = padronizar_nome(subprefeitura)
+      )
+    cat("✅ IVU carregado:", nrow(ivu_df), "subprefeituras\n")
+  }
+} else {
+  warning("⚠️ IVU não encontrado em: ", caminho_ivu)
+  cat("⚠️ IVU não encontrado. IDRGP Alvo será calculated sem ponderação.\n")
+  ivu_df <- NULL
+}
+```
+
+```{r consolidacao_historica, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# CONSOLIDAÇÃO HISTÓRICA 2022–2025 (ADAPTADO DO IDRGP_2025 — CHUNK 16.5)
+# ============================================================================
+# Este chunk cria TODOS os objetos necessários para mapas e gráficos:
+# - df_integrado (2025)
+# - df_ciclo (agregado)
+# - df_ciclo_sf (agregado + shapefile)
+# - df_longo (série histórica)
+# - ic_inf_ciclo, ic_sup_ciclo, teste_ks_ciclo, teste_principal_ciclo
+
+# --- Função de padronização (ADAPTADA COM MAPEAMENTO DE DISCREPÂNCIAS) ---
+norm_name <- function(x) {
+  x <- as.character(x)
+  # Transliteração Latin-ASCII para remover acentos
+  x <- stringi::stri_trans_general(x, "Latin-ASCII")
+  x <- x |>
+    str_to_lower() |>
+    str_squish() |>
+    str_replace_all("^subprefeitura de ", "") |>
+    str_replace_all("^subprefeitura ", "") |>
+    str_replace_all("[^a-z0-9]", "")
+  
+  # Padronizar nomes discrepantes
+  x <- case_when(
+    x %in% c("perus", "anhanguera", "perusanhanguera") ~ "perus",
+    x %in% c("saomiguel", "saomiguelpaulista") ~ "saomiguel",
+    x %in% c("itaim", "itaimpaulista") ~ "itaim",
+    x %in% c("cidadeademar", "ademar") ~ "cidadeademar",
+    x %in% c("mboimirim", "m boi mirim") ~ "mboimirim",
+    TRUE ~ x
+  )
+  return(x)
+}
+
+# --- Criar join_key no shapefile (IDÊNTICO ao IDRGP_2025) ---
+sf_sp <- sf_sp |>
+  mutate(join_key = norm_name(sp_nome))
+
+# --- Criar df_idrgp com idrgp_alvo por subprefeitura ---
+df_idrgp <- dados_classificados |>
+  filter(ano == 2025) |>
+  mutate(join_key = norm_name(subprefeitura)) |>
+  group_by(subprefeitura, join_key) |>
+  summarise(
+    valor = sum(valor_total, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+if (exists("ivu_df") && !is.null(ivu_df)) {
+  df_idrgp <- df_idrgp |>
+    left_join(ivu_df |> select(subprefeitura_pad, ivu), by = c("join_key" = "subprefeitura_pad")) |>
+    mutate(
+      total = sum(valor, na.rm = TRUE),
+      idrgp_alvo = ivu / sum(ivu, na.rm = TRUE),
+      idrgp_real = valor / total,
+      idrgp_diferenca = idrgp_real - idrgp_alvo,
+      idrgp_var_percentual = if_else(idrgp_alvo == 0, 0, idrgp_diferenca / idrgp_alvo)
+    )
+} else {
+  df_idrgp <- df_idrgp |>
+    mutate(
+      total = sum(valor, na.rm = TRUE),
+      idrgp_alvo = 1 / n(),
+      idrgp_real = valor / total,
+      idrgp_diferenca = idrgp_real - idrgp_alvo,
+      idrgp_var_percentual = if_else(idrgp_alvo == 0, 0, idrgp_diferenca / idrgp_alvo)
+    )
+}
+
+df_idrgp <- df_idrgp |>
+  select(join_key, subprefeitura, idrgp_alvo, idrgp_real, 
+         idrgp_diferenca, idrgp_var_percentual, valor, total)
+
+# --- Criar df_integrado (2025) para o mapa 2025 ---
+teste_normalidade <- ks.test(scale(df_idrgp$idrgp_diferenca)[,1], "pnorm")
+
+if (teste_normalidade$p.value <= 0.05) {
+  metodo_2025 <- "wilcoxon"
+  teste_2025 <- wilcox.test(df_idrgp$idrgp_real, df_idrgp$idrgp_alvo, 
+                            paired = TRUE, conf.int = TRUE, conf.level = 0.95)
+} else {
+  metodo_2025 <- "t_pareado"
+  teste_2025 <- t.test(df_idrgp$idrgp_real, df_idrgp$idrgp_alvo, 
+                       paired = TRUE, conf.level = 0.95)
+}
+
+ic_inf <- teste_2025$conf.int[1]
+ic_sup <- teste_2025$conf.int[2]
+
+df_integrado <- sf_sp |>
+  left_join(df_idrgp |> select(-subprefeitura), by = "join_key") |>
+  mutate(
+    status_estatistico = case_when(
+      idrgp_diferenca < ic_inf ~ "Abaixo do IDRGP Alvo",
+      idrgp_diferenca > ic_sup ~ "Acima do IDRGP Alvo",
+      TRUE ~ "Dentro do IDRGP Alvo"
+    ),
+    status_estatistico = factor(status_estatistico, 
+      levels = c("Abaixo do IDRGP Alvo", "Dentro do IDRGP Alvo", "Acima do IDRGP Alvo")),
+    valor_previsto = idrgp_alvo * total,
+    status_valor = if_else(valor >= valor_previsto, 
+                           "Valor previsto (R$) superado", 
+                           "Valor previsto (R$) não atingido")
+  )
+
+# --- Criar df_longo (todos os anos) ---
+integrar_ano <- function(ano_ref) {
+  dados_classificados |>
+    filter(ano == ano_ref) |>
+    mutate(join_key = norm_name(subprefeitura)) |>
+    group_by(subprefeitura, join_key) |>
+    summarise(valor = sum(valor_total, na.rm = TRUE), .groups = "drop") |>
+    left_join(df_idrgp |> select(join_key, idrgp_alvo), by = "join_key") |>
+    mutate(
+      valor = replace_na(valor, 0),
+      idrgp_alvo = replace_na(idrgp_alvo, 0),
+      idrgp_real = valor / sum(valor, na.rm = TRUE),
+      idrgp_diferenca = idrgp_real - idrgp_alvo,
+      ano = ano_ref
+    )
+}
+
+df_longo <- bind_rows(
+  integrar_ano(2022),
+  integrar_ano(2023),
+  integrar_ano(2024),
+  df_idrgp |> mutate(ano = 2025) |> select(subprefeitura, join_key, valor, idrgp_alvo, idrgp_real, idrgp_diferenca, ano)
+) |> mutate(ano = as.factor(ano))
+
+# --- Criar df_ciclo (agregado 2022-2025) ---
+df_ciclo <- df_longo |>
+  group_by(subprefeitura) |>
+  summarise(
+    idrgp_alvo = first(idrgp_alvo),
+    valor_2022_a_2025 = sum(valor, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  mutate(
+    idrgp_real_2022_a_2025 = valor_2022_a_2025 / sum(valor_2022_a_2025),
+    idrgp_diferenca_ciclo = idrgp_real_2022_a_2025 - idrgp_alvo
+  )
+
+# --- Teste do ciclo ---
+vetor_ciclo_z <- scale(df_ciclo$idrgp_diferenca_ciclo)[, 1]
+teste_ks_ciclo <- ks.test(vetor_ciclo_z, "pnorm")
+
+if (teste_ks_ciclo$p.value <= 0.05) {
+  metodo_estatistico_ciclo <- "wilcoxon"
+  teste_principal_ciclo <- wilcox.test(
+    df_ciclo$idrgp_real_2022_a_2025, df_ciclo$idrgp_alvo,
+    paired = TRUE, conf.int = TRUE, conf.level = 0.95
+  )
+} else {
+  metodo_estatistico_ciclo <- "t_pareado"
+  teste_principal_ciclo <- t.test(
+    df_ciclo$idrgp_real_2022_a_2025, df_ciclo$idrgp_alvo,
+    paired = TRUE, conf.level = 0.95
+  )
+}
+
+ic_inf_ciclo <- teste_principal_ciclo$conf.int[1]
+ic_sup_ciclo <- teste_principal_ciclo$conf.int[2]
+
+# --- Criar df_ciclo_sf (shapefile do ciclo) ---
+df_ciclo_sf <- sf_sp |>
+  left_join(
+    df_ciclo |> mutate(join_key = norm_name(subprefeitura)) |> select(-subprefeitura),
+    by = "join_key"
+  ) |>
+  mutate(
+    status_ciclo_estatistico = case_when(
+      idrgp_diferenca_ciclo < ic_inf_ciclo ~ "Abaixo do IDRGP Alvo",
+      idrgp_diferenca_ciclo > ic_sup_ciclo ~ "Acima do IDRGP Alvo",
+      TRUE ~ "Dentro do IDRGP Alvo"
+    ),
+    status_ciclo_estatistico = factor(status_ciclo_estatistico,
+      levels = c("Abaixo do IDRGP Alvo", "Dentro do IDRGP Alvo", "Acima do IDRGP Alvo"))
+  )
+
+cat("✅ Consolidação histórica concluída\n")
+cat("📊 df_integrado:", nrow(df_integrado), "linhas\n")
+cat("📊 df_ciclo:", nrow(df_ciclo), "linhas\n")
+cat("📊 df_ciclo_sf:", nrow(df_ciclo_sf), "feições\n")
+cat("📊 df_longo:", nrow(df_longo), "linhas\n")
+```
+
+```{r auditoria_pre_mapas, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# BLOCO DE AUDITORIA — CONFIRMAÇÃO PRÉ-MAPAS
+# ============================================================================
+
+cat("\n========================================\n")
+cat("🔒 AUDITORIA PRÉ-MAPAS\n")
+cat("========================================\n")
+
+# Verificar se dados_cesta está sendo usado
+objetos_para_verificar <- c("dados_testes", "dados_classificados", 
+                             "df_integrado", "df_ciclo", "df_longo", "df_ciclo_sf")
+
+for (obj in objetos_para_verificar) {
+  if (exists(obj)) {
+    cat("✅", obj, "— existe\n")
+  } else {
+    cat("❌", obj, "— NÃO EXISTE\n")
+  }
+}
+
+# Verificar se há ações externas nos dados classificados
+acoes_classificadas <- unique(dados_classificados$codigo_proj_ativ)
+acoes_cesta <- unique(tabela_cesta$codigo_proj_ativ)
+acoes_extras <- setdiff(acoes_classificadas, acoes_cesta)
+
+if (length(acoes_extras) > 0) {
+  cat("❌ ALERTA: Ações externas à cesta nos dados classificados:\n")
+  print(acoes_extras)
+} else {
+  cat("✅ Nenhuma ação externa à cesta nos dados classificados\n")
+}
+
+cat("\n📢 CONFIRMAÇÃO: Todos os mapas, gráficos e análises estão sendo\n")
+cat("   gerados EXCLUSIVAMENTE com ações da cesta selecionada.\n")
+cat("   Arquivo de referência: Despesas_IDRGP_2024.xlsx\n")
+cat("========================================\n\n")
+```
+
+# Mapas
+
+```{r config_mapas, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# CONFIGURAÇÃO DOS MAPAS (MODELO IDRGP_2025 — ADAPTADO)
+# ============================================================================
+
+# --- Paleta de cores padronizada ---
+cores_status <- c(
+  "Abaixo do IDRGP Alvo" = "#d97a0f",
+  "Dentro do IDRGP Alvo" = "#0ea1cf",
+  "Acima do IDRGP Alvo"  = "#1A1442"
+)
+
+# --- Tema do mapa ---
+tema_mapa <- theme_void(base_size = 12) +
+  theme(
+    plot.title    = element_text(face = "bold", size = 14, hjust = 0),
+    plot.subtitle = element_text(size = 10, hjust = 0),
+    plot.caption  = element_text(size = 7, hjust = 0),
+    plot.title.position = "plot", 
+    plot.caption.position = "plot",
+    plot.margin   = margin(10, 10, 10, 10),
+    legend.position = "right",
+    legend.title  = element_text(size = 9),
+    legend.text   = element_text(size = 8)
+  )
+
+# --- Legenda base ---
+caption_base <- "Elaboração: CPMA/SIME/SEPLAN/PMSP.\nFonte: Secretaria Municipal de Planejamento e Eficiência — SF-PMSP"
+
+# --- Função gerar_mapa (CORRIGIDA - verifica se coluna existe) ---
+gerar_mapa <- function(sf_data, col_status, titulo, nota = "") {
+  
+  # Verificar se a coluna de status existe
+  if (!col_status %in% names(sf_data)) {
+    warning("⚠️ Coluna '", col_status, "' não encontrada. Mapa não será gerado.")
+    return(NULL)
+  }
+  
+  # Criar o mapa
+  p <- ggplot(sf_data) +
+    geom_sf(aes(fill = .data[[col_status]]), 
+            color = "white", linewidth = 0.3) +
+    scale_fill_manual(
+      values = cores_status, 
+      name = "Status IDRGP Real", 
+      na.value = "grey80",
+      drop = FALSE
+    ) +
+    labs(
+      title = titulo,
+      subtitle = "Classificação de cada subprefeitura em relação ao IDRGP Alvo",
+      caption = paste0(caption_base, "\n", nota)
+    ) +
+    tema_mapa
+  
+  # Adicionar siglas SOMENTE se a coluna existir
+  if ("sigla" %in% names(sf_data)) {
+    p <- p + geom_sf_text(
+      aes(label = sigla), 
+      color = "white", size = 2.2, fontface = "bold"
+    )
+  }
+  
+  return(p)
+}
+
+cat("✅ Configuração de mapas carregada\n")
+```
+
+```{r preparar_shapefile_dados, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# PREPARAÇÃO: JUNTAR SHAPEFILE COM DADOS CLASSIFICADOS
+# ============================================================================
+
+# Verificar se o shapefile foi carregado
+if (!exists("sf_sp")) {
+  stop("❌ Shapefile não carregado. Verifique o chunk de carga de dados.")
+}
+
+# Inspecionar colunas do shapefile
+cat("📋 Colunas do shapefile:\n")
+print(names(sf_sp))
+
+# Identificar coluna de nome
+padroes_nome <- c("sp_nome", "nm_subpre", "subprefei", "nome", "sub", "NOME", "SUBPREFEI")
+col_nome <- intersect(padroes_nome, names(sf_sp))[1]
+
+if (is.na(col_nome)) {
+  col_nome <- names(sf_sp)[sapply(sf_sp, is.character)][1]
+  cat("⚠️ Nenhum padrão de nome encontrado. Usando:", col_nome, "\n")
+}
+
+# Identificar coluna de sigla
+padroes_sigla <- c("sigla", "sg", "SIGLA", "abrev", "ABREV", "sg_subpref")
+col_sigla <- intersect(padroes_sigla, names(sf_sp))[1]
+
+# Padronizar nomes no shapefile
+sf_sp <- sf_sp |>
+  rename(
+    sp_nome = all_of(col_nome)
+  ) |>
+  mutate(
+    sp_nome_pad = padronizar_nome(sp_nome)
+  )
+
+# Adicionar sigla (se existir) or criar
+if (!is.na(col_sigla)) {
+  sf_sp <- sf_sp |> rename(sigla = all_of(col_sigla))
+} else {
+  # Criar sigla a partir do nome (3 primeiras letras)
+  sf_sp <- sf_sp |>
+    mutate(sigla = str_sub(sp_nome, 1, 3) |> str_to_upper())
+}
+
+cat("✅ Coluna de nome:", col_nome, "\n")
+cat("✅ Coluna de sigla:", if_else(is.na(col_sigla), "CRIADA", col_sigla), "\n")
+cat("📊 Subprefeituras no shapefile:", nrow(sf_sp), "\n")
+
+cat("✅ Shapefiles preparados para todos os anos\n")
+```
+
+## Mapas 2022, 2023 e 2024 Individuais
+
+```{r mapas_2022_2024, echo=FALSE, fig.height=10, fig.width=12, message=FALSE, warning=FALSE}
+# ====================================================================
+# MAPAS 2022, 2023, 2024 — USANDO df_longo + df_ciclo_sf
+# Compatível com IDRGP_2025: usa status_estatistico com IC 95%
+# ====================================================================
+
+preparar_sf_ano <- function(ano_ref) {
+  # Criar classificação para o ano específico
+  df_ano <- df_longo |>
+    filter(ano == ano_ref) |>
+    mutate(
+      status_estatistico = case_when(
+        idrgp_diferenca < ic_inf ~ "Abaixo do IDRGP Alvo",
+        idrgp_diferenca > ic_sup ~ "Acima do IDRGP Alvo",
+        TRUE ~ "Dentro do IDRGP Alvo"
+      ),
+      status_estatistico = factor(status_estatistico,
+        levels = c("Abaixo do IDRGP Alvo", "Dentro do IDRGP Alvo", "Acima do IDRGP Alvo"))
+    )
+  
+  # Juntar com shapefile
+  sf_sp |>
+    left_join(df_ano |> select(join_key, status_estatistico), by = "join_key")
+}
+
+# Gerar mapas
+mapa_2022 <- gerar_mapa(
+  preparar_sf_ano(2022), "status_estatistico",
+  "IDRGP 2022 — Status (IC 95%) quanto ao IDRGP Alvo",
+  "Classificação estatística (IC 95%) | Teste T pareado"
+)
+
+mapa_2023 <- gerar_mapa(
+  preparar_sf_ano(2023), "status_estatistico",
+  "IDRGP 2023 — Status (IC 95%) quanto ao IDRGP Alvo",
+  "Classificação estatística (IC 95%) | Teste T pareado"
+)
+
+mapa_2024 <- gerar_mapa(
+  preparar_sf_ano(2024), "status_estatistico",
+  "IDRGP 2024 — Status (IC 95%) quanto ao IDRGP Alvo",
+  "Classificação estatística (IC 95%) | Teste de Wilcoxon"
+)
+
+# Salvar
+ggsave(file.path(pasta_saida, "mapas", "mapa_2022.png"), mapa_2022, width=12, height=10, dpi=300)
+ggsave(file.path(pasta_saida, "mapas", "mapa_2023.png"), mapa_2023, width=12, height=10, dpi=300)
+ggsave(file.path(pasta_saida, "mapas", "mapa_2024.png"), mapa_2024, width=12, height=10, dpi=300)
+
+# Exibir
+print(mapa_2022)
+cat("\n\n")
+print(mapa_2023)
+cat("\n\n")
+print(mapa_2024)
+
+cat("✅ Mapas 2022, 2023, 2024 gerados com 3 categorias\n")
+```
+
+## Mapa 2025
+
+```{r mapa_2025, echo=FALSE, fig.height=10, fig.width=12, message=FALSE, warning=FALSE}
+# ====================================================================
+# MAPA 2025 — USANDO df_integrado$status_estatistico
+# Compatível com IDRGP_2025
+# ====================================================================
+
+# Verificar se df_integrado tem a coluna correta
+if (!"status_estatistico" %in% names(df_integrado)) {
+  stop("❌ df_integrado não tem coluna 'status_estatistico'. Verifique o chunk de consolidação.")
+}
+
+# Verificar se tem as 3 categorias
+cats_presentes <- unique(df_integrado$status_estatistico)
+cat("📊 Categorias no mapa 2025:", paste(cats_presentes, collapse = ", "), "\n")
+
+mapa_2025 <- gerar_mapa(
+  df_integrado |> left_join(sf_sp |> st_drop_geometry() |> select(join_key, sigla), by = "join_key") |> st_as_sf(), "status_estatistico",
+  "IDRGP 2025 — Status quanto ao IDRGP Alvo",
+  paste0("IC do teste ", toupper(metodo_2025),
+         " (95%): [", round(ic_inf, 5), "; ", round(ic_sup, 5), "].")
+)
+
+# Salvar
+ggsave(file.path(pasta_saida, "mapas", "mapa_2025.png"), mapa_2025, width=12, height=10, dpi=300)
+
+# Exibir
+print(mapa_2025)
+cat("✅ Mapa 2025 gerado com 3 categorias\n")
+```
+
+## Painel 4 Mapas Lado a Lado
+
+```{r painel_4_mapas, echo=FALSE, fig.width=20, fig.height=16, message=FALSE, warning=FALSE}
+# ====================================================================
+# PAINEL: 4 MAPAS LADO A LADO (2×2)
+# ====================================================================
+
+if (exists("mapa_2022") && exists("mapa_2023") && 
+    exists("mapa_2024") && exists("mapa_2025")) {
+  
+  painel_mapas <- (mapa_2022 | mapa_2023) / (mapa_2024 | mapa_2025) +
+    plot_annotation(
+      title = "IDRGP 2022–2025 — Ciclo PPA Completo",
+      subtitle = "Classificação das Subprefeituras por Ano",
+      caption = caption_base,
+      theme = theme(
+        plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+        plot.subtitle = element_text(size = 12, hjust = 0.5, color = "#666666")
+      )
+    )
+  
+  # Salvar
+  ggsave(file.path(pasta_saida, "mapas", "painel_4_mapas_2022_2025.png"),
+         painel_mapas, width = 20, height = 16, dpi = 300)
+  
+  # Exibir
+  print(painel_mapas)
+  cat("✅ Painel 4 mapas gerado\n")
+}
+```
+
+## Mapa Agregado do Ciclo PPA 2022–2025
+
+```{r mapa_ciclo, echo=FALSE, fig.height=10, fig.width=12, message=FALSE, warning=FALSE}
+# ====================================================================
+# MAPA AGREGADO — USANDO df_ciclo_sf$status_ciclo_estatistico
+# Compatível com IDRGP_2025
+# ====================================================================
+
+# Verificar se df_ciclo_sf existe
+if (!exists("df_ciclo_sf")) {
+  stop("❌ df_ciclo_sf não existe. Verifique o chunk de consolidação histórica.")
+}
+
+# Verificar categorias
+cats_ciclo <- unique(df_ciclo_sf$status_ciclo_estatistico)
+cat("📊 Categorias no mapa agregado:", paste(cats_ciclo, collapse = ", "), "\n")
+
+legenda_ciclo <- paste0(
+  "KS p=", formatC(teste_ks_ciclo$p.value, format="e", digits=2),
+  " | ", toupper(metodo_estatistico_ciclo),
+  " p=", formatC(teste_principal_ciclo$p.value, format="e", digits=2),
+  " | IC 95% (real - alvo): [", round(ic_inf_ciclo, 5), "; ", round(ic_sup_ciclo, 5), "]."
+)
+
+mapa_ciclo <- gerar_mapa(
+  df_ciclo_sf |> left_join(sf_sp |> st_drop_geometry() |> select(join_key, sigla), by = "join_key") |> st_as_sf(), "status_ciclo_estatistico",
+  "IDRGP Agregado 2022–2025 — Balanço do Ciclo PPA",
+  legenda_ciclo
+)
+
+# Salvar
+ggsave(file.path(pasta_saida, "mapas", "mapa_agregado_ciclo_ppa.png"), 
+       mapa_ciclo, width = 12, height = 10, dpi = 300)
+
+# Exibir
+print(mapa_ciclo)
+cat("✅ Mapa agregado gerado com 3 categorias\n")
+cat("✅ 6 mapas gerados no total (4 individuais + painel + agregado)\n")
+```
+
+# Gráficos
+
+```{r preparar_dados_graficos, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# PREPARAÇÃO DOS DADOS PARA OS GRÁFICOS (MODELO IDRGP_2025)
+# ============================================================================
+
+# --- Tema igual ao IDRGP_2025 ---
+tema_barras <- theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    plot.title.position = "plot", 
+    plot.caption.position = "plot",
+    plot.title    = element_text(face = "bold", size = 13),
+    plot.subtitle = element_text(size = 10),
+    plot.caption  = element_text(size = 7, hjust = 0),
+    axis.text.y   = element_text(size = 8)
+  )
+
+# --- Tabela de correspondência Subprefeitura -> Sigla ---
+tabela_siglas <- tibble::tribble(
+  ~subprefeitura, ~sigla,
+  "Subprefeitura Aricanduva/Formosa/Carrão", "AF",
+  "Subprefeitura Butantã", "BT",
+  "Subprefeitura Campo Limpo", "CL",
+  "Subprefeitura Capela do Socorro", "CS",
+  "Subprefeitura Casa Verde/Cachoeirinha", "CV",
+  "Subprefeitura Cidade Ademar", "AD",
+  "Subprefeitura Cidade Tiradentes", "CT",
+  "Subprefeitura de Guaianases", "GU",
+  "Subprefeitura de Vila Prudente", "VP",
+  "Subprefeitura Ermelino Matarazzo", "EM",
+  "Subprefeitura Freguesia/Brasilândia", "FO",
+  "Subprefeitura Ipiranga", "IP",
+  "Subprefeitura Itaim Paulista", "IT",
+  "Subprefeitura Itaquera", "IQ",
+  "Subprefeitura Jabaquara", "JA",
+  "Subprefeitura Jaçanã/Tremembé", "JT",
+  "Subprefeitura Lapa", "LA",
+  "Subprefeitura M'Boi Mirim", "MB",
+  "Subprefeitura Mooca", "MO",
+  "Subprefeitura Parelheiros", "PA",
+  "Subprefeitura Penha", "PE",
+  "Subprefeitura Perus/Anhanguera", "PR",
+  "Subprefeitura Pinheiros", "PI",
+  "Subprefeitura Pirituba/Jaraguá", "PJ",
+  "Subprefeitura Santana/Tucuruvi", "ST",
+  "Subprefeitura Santo Amaro", "SA",
+  "Subprefeitura São Mateus", "SM",
+  "Subprefeitura São Miguel Paulista", "MP",
+  "Subprefeitura Sapopemba", "SB",
+  "Subprefeitura Sé", "SE",
+  "Subprefeitura Vila Maria/Vila Guilherme", "MG",
+  "Subprefeitura Vila Mariana", "VM"
+)
+
+# --- Obter df_integrado de consolidacao_historica, retirar geometria, juntar siglas e filtrar supras ---
+df_integrado <- df_integrado |>
+  st_drop_geometry() |>
+  left_join(tabela_siglas |> mutate(join_key = norm_name(subprefeitura)), by = "join_key") |>
+  filter(!is.na(sigla))
+
+# --- Obter df_ciclo de consolidacao_historica, juntar siglas e filtrar supras ---
+df_ciclo <- df_ciclo |>
+  left_join(tabela_siglas, by = "subprefeitura") |>
+  mutate(
+    status_ciclo = case_when(
+      idrgp_diferenca_ciclo < ic_inf_ciclo ~ "Abaixo do IDRGP Alvo",
+      idrgp_diferenca_ciclo > ic_sup_ciclo ~ "Acima do IDRGP Alvo",
+      TRUE ~ "Dentro do IDRGP Alvo"
+    ),
+    status_ciclo = factor(status_ciclo,
+      levels = c("Abaixo do IDRGP Alvo", "Dentro do IDRGP Alvo", "Acima do IDRGP Alvo"))
+  ) |>
+  filter(!is.na(sigla))
+
+# --- Obter df_longo de consolidacao_historica, juntar siglas e filtrar supras ---
+df_longo <- df_longo |>
+  left_join(tabela_siglas, by = "subprefeitura") |>
+  filter(!is.na(sigla))
+
+# --- Dados específicos para o gráfico G3 ---
+df_plot_g3 <- df_integrado |>
+  mutate(
+    valor_previsto = idrgp_alvo * sum(valor, na.rm = TRUE),
+    status_valor_plot = factor(status_valor, 
+      levels = c("Valor previsto (R$) não atingido", "Valor previsto (R$) superado")),
+    valor_executado = valor
+  )
+
+# --- Para compatibilidade com as mensagens de log ---
+valor_total_municipio_2025 <- sum(df_integrado$valor, na.rm = TRUE)
+valor_total_ciclo <- sum(df_ciclo$valor_2022_a_2025, na.rm = TRUE)
+
+# --- Legenda base ---
+caption_base <- "Fonte: SF-PMSP | Elaboração: CPMA/SIME/SEPLAN"
+
+cat("✅ Dados preparados para gráficos (modelo IDRGP_2025)\n")
+cat("📊 Subprefeituras:", nrow(df_integrado), "\n")
+cat("💰 Valor total 2025: R$", format(valor_total_municipio_2025, big.mark = "."), "\n")
+cat("💰 Valor total ciclo: R$", format(valor_total_ciclo, big.mark = "."), "\n")
+```
+
+## G1 — IDRGP 2025: Alvo vs. Real (%)
+```{r grafico_g1, echo=FALSE, fig.width=14, fig.height=12, message=FALSE, warning=FALSE}
+# ====================================================================
+# G1: Barras horizontais com LOSANGO do IDRGP Alvo
+# EXATAMENTE igual ao IDRGP_2025, usando df_integrado
+# ====================================================================
+
+grafico_g1 <- ggplot(df_integrado, aes(y = reorder(sigla, idrgp_alvo))) +
+  # Barras: IDRGP Real
+  geom_col(aes(x = idrgp_real, fill = status_estatistico), 
+           width = 0.65, alpha = 0.9) +
+  # Losango: IDRGP Alvo
+  geom_point(aes(x = idrgp_alvo, shape = "IDRGP Alvo"), 
+             color = "#c0392b", size = 3) +
+  # Cores das barras
+  scale_fill_manual(
+    values = c(
+      "Abaixo do IDRGP Alvo" = "#d97a0f",
+      "Dentro do IDRGP Alvo"  = "#0ea1cf",
+      "Acima do IDRGP Alvo"   = "#1A1442"
+    ),
+    name = "Status:",
+    drop = FALSE
+  ) +
+  # Forma do losango
+  scale_shape_manual(values = c("IDRGP Alvo" = 18), name = "") +
+  # Ordem das legendas
+  guides(
+    fill  = guide_legend(order = 1),
+    shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)
+  ) +
+  # Eixo X em percentual
+  scale_x_continuous(labels = scales::label_percent(accuracy = 0.1)) +
+  # Títulos
+  labs(
+    title = "IDRGP 2025 — Distribuição Percentual do Gasto por Subprefeitura",
+    subtitle = "IDRGP Real (barras) e IDRGP Alvo (losango)",
+    x = "IDRGP (%)", y = NULL,
+    caption = caption_base
+  ) +
+  tema_barras
+
+# Salvar
+ggsave(file.path(pasta_saida, "graficos", "G1_idrgp_alvo_vs_real.png"),
+       grafico_g1, width = 14, height = 12, dpi = 300)
+
+# Exibir
+print(grafico_g1)
+cat("✅ G1 gerado — IDRGP 2025: Alvo vs Real (%)\n")
+```
+
+## G2 — IDRGP Agregado 2022–2025 (%)
+```{r grafico_g2, echo=FALSE, fig.width=14, fig.height=12, message=FALSE, warning=FALSE}
+# ====================================================================
+# G2: Barras horizontais com LOSANGO — Ciclo PPA completo
+# EXATAMENTE igual ao IDRGP_2025, usando df_ciclo
+# ====================================================================
+
+grafico_g2 <- ggplot(df_ciclo, aes(y = reorder(sigla, idrgp_alvo))) +
+  # Barras: IDRGP Real acumulado
+  geom_col(aes(x = idrgp_real_2022_a_2025, fill = status_ciclo), 
+           width = 0.65, alpha = 0.9) +
+  # Losango: IDRGP Alvo
+  geom_point(aes(x = idrgp_alvo, shape = "IDRGP Alvo"), 
+             color = "#c0392b", size = 3) +
+  # Cores
+  scale_fill_manual(
+    values = c(
+      "Abaixo do IDRGP Alvo" = "#d97a0f",
+      "Dentro do IDRGP Alvo"  = "#0ea1cf",
+      "Acima do IDRGP Alvo"   = "#1A1442"
+    ),
+    name = "Status:",
+    limits = names(cores_status),
+    drop = FALSE
+  ) +
+  scale_shape_manual(values = c("IDRGP Alvo" = 18), name = "") +
+  guides(
+    fill  = guide_legend(order = 1),
+    shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)
+  ) +
+  scale_x_continuous(labels = scales::label_percent(accuracy = 0.1)) +
+  labs(
+    title = "IDRGP 2022–2025 — Balanço do Ciclo PPA (Distribuição Percentual)",
+    subtitle = "IDRGP Real acumulado (barras) e IDRGP Alvo (losango)",
+    x = "IDRGP Acumulado (%)", y = NULL,
+    caption = paste0(caption_base, "\nVariação percentual (±30%).")
+  ) +
+  tema_barras
+
+# Salvar
+ggsave(file.path(pasta_saida, "graficos", "G2_idrgp_ciclo_ppa.png"),
+       grafico_g2, width = 14, height = 12, dpi = 300)
+
+# Exibir
+print(grafico_g2)
+cat("✅ G2 gerado — IDRGP Agregado 2022–2025 (%)\n")
+```
+
+## G3 — IDRGP 2025: Valores Absolutos (R$)
+```{r grafico_g3, echo=FALSE, fig.width=14, fig.height=12, message=FALSE, warning=FALSE}
+# ====================================================================
+# G3: Barras com LOSANGO do Valor Previsto
+# EXATAMENTE igual ao IDRGP_2025, usando df_integrado
+# ====================================================================
+
+df_plot_g3 <- df_integrado |>
+  mutate(
+    valor_executado = valor,
+    status_valor_plot = recode(
+      status_valor,
+      "Valor previsto (R$) superado" = "Valor previsto (R$) atingido"
+    )
+  )
+
+grafico_g3 <- ggplot(df_plot_g3, aes(y = reorder(sigla, idrgp_alvo))) +
+  # Barras: valor executado
+  geom_col(aes(x = valor_executado, fill = status_valor_plot), 
+           width = 0.65, alpha = 0.9) +
+  # Losango: valor previsto
+  geom_point(aes(x = valor_previsto, shape = "Valor Previsto (R$)"),
+             color = "#c0392b", size = 3) +
+  # Cores
+  scale_fill_manual(
+    values = c(
+      "Valor previsto (R$) atingido"     = "#1A1442",
+      "Valor previsto (R$) não atingido" = "#d97a0f"
+    ),
+    name = "Status:",
+    drop = FALSE
+  ) +
+  scale_shape_manual(values = c("Valor Previsto (R$)" = 18), name = "") +
+  guides(
+    fill  = guide_legend(order = 1),
+    shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)
+  ) +
+  scale_x_continuous(labels = scales::label_number(
+    scale_cut = scales::cut_short_scale(), prefix = "R$ ", decimal.mark = ","
+  )) +
+  labs(
+    title = "IDRGP 2025 — Valor Previsto e Executado por Subprefeitura (R$)",
+    subtitle = "Barras: valor executado | Losango: valor previsto",
+    x = "Valor executado (R$)", y = NULL, 
+    caption = caption_base
+  ) +
+  tema_barras
+
+# Salvar
+ggsave(file.path(pasta_saida, "graficos", "G3_valores_absolutos.png"),
+       grafico_g3, width = 14, height = 12, dpi = 300)
+
+# Exibir
+print(grafico_g3)
+cat("✅ G3 gerado — IDRGP 2025: Valores Absolutos (R$)\n")
+```
+
+## G4 — IDRGP 2022–2025: Série Histórica (R$) — ORDEM INVERTIDA
+```{r grafico_g4, echo=FALSE, fig.width=14, fig.height=12, message=FALSE, warning=FALSE}
+# ====================================================================
+# G4: Barras empilhadas com LOSANGO do valor previsto do ciclo
+# 🚨 ORDEM INVERTIDA: 2025 → 2024 → 2023 → 2022
+# ====================================================================
+
+df_longo_plot <- df_longo |>
+  mutate(
+    # Inverter ordem dos anos para que 2025 apareça PRIMEIRO nas barras
+    ano = factor(ano, levels = c("2025", "2024", "2023", "2022")),
+    # Criar rótulo limpo para o eixo Y
+    nome_y = str_replace(subprefeitura, "^Subprefeitura( de)? ", "")
+  ) |>
+  mutate(
+    # Ordenar pelos postos do IVU (idrgp_alvo)
+    nome_y = factor(nome_y, 
+      levels = df_ciclo |> 
+        mutate(nome_y = str_replace(subprefeitura, "^Subprefeitura( de)? ", "")) |>
+        arrange(idrgp_alvo) |> 
+        pull(nome_y))
+  )
+
+valor_previsto_ciclo <- sum(df_integrado$valor_previsto, na.rm = TRUE)
+
+grafico_g4 <- ggplot(df_longo_plot, aes(y = nome_y, x = valor, fill = ano)) +
+  # Barras empilhadas por ano com position_stack(reverse = TRUE)
+  geom_col(width = 0.65, alpha = 0.9, position = position_stack(reverse = TRUE)) +
+  # Losango: valor previsto do ciclo
+  geom_point(
+    data = df_ciclo |>
+      mutate(
+        nome_y = str_replace(subprefeitura, "^Subprefeitura( de)? ", ""),
+        nome_y = factor(nome_y, levels = levels(df_longo_plot$nome_y)),
+        valor_prev = idrgp_alvo * valor_previsto_ciclo
+      ),
+    aes(y = nome_y, x = valor_prev, shape = "Valor Previsto Ciclo"),
+    shape = 23, fill = "white", color = "#c0392b", stroke = 1.1, size = 3.2,
+    inherit.aes = FALSE
+  ) +
+  # Cores (🚨 ordem invertida)
+  scale_fill_manual(
+    values = c(
+      "2025" = "#0B3C6D",  # Mais escuro (ano mais recente)
+      "2024" = "#1F78B4",
+      "2023" = "#4CB7D8",
+      "2022" = "#9BD7EA"   # Mais claro (ano mais antigo)
+    ),
+    name = "Ano"
+  ) +
+  scale_x_continuous(labels = scales::label_number(
+    scale_cut = scales::cut_short_scale(), prefix = "R$ ", decimal.mark = ","
+  )) +
+  labs(
+    title = "IDRGP 2022–2025 — Evolução do Gasto Real por Subprefeitura (R$)",
+    subtitle = "Barras empilhadas por ano (2025–2022) | Losango: valor previsto total do ciclo",
+    x = "Valor executado acumulado (R$)", y = NULL,
+    caption = caption_base
+  ) +
+  tema_barras
+
+# Salvar
+ggsave(file.path(pasta_saida, "graficos", "G4_serie_historica.png"),
+       grafico_g4, width = 14, height = 12, dpi = 300)
+
+# Exibir
+print(grafico_g4)
+cat("✅ G4 gerado — Série Histórica 2022–2025 (ordem invertida)\n")
+cat("✅ 4 gráficos gerados no padrão IDRGP_2025.\n")
+```
+
+# Tabelas e Exportações
+
+## Tabela 1: Exportação de Valores Totais
+```{r tabela_valores, message=FALSE, warning=FALSE}
+# ============================================================================
+# CHUNK 19: EXPORTAÇÃO EXCEL DA TABELA 1
+# ============================================================================
+if (exists("dados_classificados") && exists("dados_agregado")) {
+    
+    planilhas_valores <- list()
+    for (ano_req in c(2022, 2023, 2024, 2025)) {
+      df_ano_tab <- dados_classificados |> 
+        filter(ano == ano_req) |> 
+        select(Subprefeitura = subprefeitura, Valor_Total = valor_total, Categoria = categoria) |> 
+        arrange(desc(Valor_Total))
+      planilhas_valores[[as.character(ano_req)]] <- df_ano_tab
+    }
+    
+    df_agregado_tab <- dados_agregado |> 
+      select(Subprefeitura = subprefeitura, Valor_Total = valor_total_ciclo, Categoria = categoria) |> 
+      arrange(desc(Valor_Total))
+    
+    planilhas_valores[["Agregado_2022_2025"]] <- df_agregado_tab
+    
+    wb_valores <- createWorkbook()
+    for (nome_aba in names(planilhas_valores)) {
+      addWorksheet(wb_valores, nome_aba)
+      writeData(wb_valores, nome_aba, planilhas_valores[[nome_aba]])
+      hs <- createStyle(fontColour = "#ffffff", fgFill = "#1A1442", halign = "center", textDecoration = "bold")
+      addStyle(wb_valores, nome_aba, style = hs, rows = 1, cols = 1:ncol(planilhas_valores[[nome_aba]]), gridExpand = TRUE)
+      setColWidths(wb_valores, nome_aba, cols = 1:ncol(planilhas_valores[[nome_aba]]), widths = "auto")
+    }
+    
+    saveWorkbook(wb_valores, file.path(pasta_saida, "tabelas", "tabela_valores_por_subprefeitura.xlsx"), overwrite = TRUE)
+    
+    datatable(df_agregado_tab, options = list(pageLength = 10)) %>%
+      formatCurrency("Valor_Total", currency = "R$ ", interval = 3, mark = ".", dec.mark = ",")
+}
+```
+
+
+
+# Exportação PDF
+
+```{r exportacao_pdf, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+# ============================================================================
+# CHUNK 22: EXPORTAÇÃO PDF COMPLETA
+# ============================================================================
+if (knitr::is_latex_output()) {
+  
+  inserir_pagina_mapa <- function(caminho_imagem, titulo = NULL, subtitulo = NULL) {
+    if(file.exists(caminho_imagem)) {
+      cat("\n\\newpage\n")
+      if (!is.null(titulo)) cat("\n### ", titulo, "\n\n")
+      if (!is.null(subtitulo)) cat("*", subtitulo, "*\n\n")
+      cat(sprintf("\\includegraphics[width=\\textwidth]{%s}\n", caminho_imagem))
+      cat("\n")
+    }
+  }
+
+  inserir_tabela_pdf <- function(df, titulo = NULL) {
+    if (!is.null(titulo)) cat("\n### ", titulo, "\n\n")
+    print(
+      df %>%
+        kable(format = "latex", booktabs = TRUE, linesep = "") %>%
+        kable_styling(
+          latex_options = c("striped", "hold_position", "scale_down"),
+          stripe_color = "#F7F9FC",
+          font_size = 8
+        )
+    )
+  }
+
+  cat("\\newpage\n# Mapas de Classificação\n\n")
+  inserir_pagina_mapa(file.path(pasta_saida, "mapas", "mapa_2022.png"), "Mapa 2022")
+  inserir_pagina_mapa(file.path(pasta_saida, "mapas", "mapa_2023.png"), "Mapa 2023")
+  inserir_pagina_mapa(file.path(pasta_saida, "mapas", "mapa_2024.png"), "Mapa 2024")
+  inserir_pagina_mapa(file.path(pasta_saida, "mapas", "mapa_2025.png"), "Mapa 2025")
+  inserir_pagina_mapa(file.path(pasta_saida, "mapas", "painel_4_mapas_2022_2025.png"), "Painel PPA 2022-2025")
+  inserir_pagina_mapa(file.path(pasta_saida, "mapas", "mapa_agregado_ciclo_ppa.png"), "Agregado do Ciclo PPA")
+  
+  cat("\\newpage\n# Gráficos Analíticos\n\n")
+  inserir_pagina_mapa(file.path(pasta_saida, "graficos", "G1_comparacao_previsto_executado.png"))
+  inserir_pagina_mapa(file.path(pasta_saida, "graficos", "G2_evolucao_temporal.png"))
+  inserir_pagina_mapa(file.path(pasta_saida, "graficos", "G3_distribuicao_percentual.png"))
+  inserir_pagina_mapa(file.path(pasta_saida, "graficos", "G4_serie_historica_valores_absolutos.png"))
+  
+  cat("\\newpage\n# Tabelas\n\n")
+  if (exists("dados_agregado")) {
+      inserir_tabela_pdf(head(dados_agregado, 20), "Amostra da Tabela Agregada")
+  }
+}
+```
+
+# Informações Técnicas
+
+### Testes Estatísticos por Ano
+
+| Ano | Teste | Parâmetros |
+|-----|-------|------------|
+| 2022 | Teste T pareado | α = 0,05 |
+| 2023 | Teste T pareado | α = 0,05 |
+| 2024 | Teste de Wilcoxon | α = 0,05 |
+| 2025 | Teste KS (Kolmogorov-Smirnov) | α = 0,05 |
+
+### Classificação IDRGP
+
+| Categoria | Cor | Interpretação |
+|-----------|-----|---------------|
+| Abaixo do IDRGP Alvo | 🟠 Laranja (#d97a0f) | Execução abaixo do esperado |
+| Dentro do IDRGP Alvo | 🔵 Azul (#0ea1cf) | Execução dentro do intervalo alvo |
+| Acima do IDRGP Alvo | 🔷 Azul escuro (#1A1442) | Execução acima do esperado |
+
+### Elaboração
+**CPMA** — Coordenadoria, Planejamento e Monitoramento de Ações  
+**SIME/SEPLAN/PMSP** — Prefeitura Municipal de São Paulo  
+Documento gerado em: `r format(Sys.Date(), '%d de %B de %Y')`
+
+```{r conclusao_final, echo=FALSE, results='asis'}
+# ============================================================================
+# CHUNK FINAL: CONCLUSÃO E ESTATÍSTICAS
+# ============================================================================
+cat("\n\n<hr>\n\n")
+cat("### Resumo Consolidado do Processamento\n\n")
+cat(sprintf("✅ **Ciclo PPA Analisado:** 2022 a 2025\n\n"))
+cat("🔒 FILTRAGEM APLICADA\n")
+cat("   Cesta oficial:        Despesas_IDRGP_2024.xlsx\n")
+cat("   Ações na cesta:       ", n_distinct(tabela_cesta$codigo_proj_ativ), "\n")
+cat("   Ações processadas:    ", n_distinct(dados_cesta$codigo_proj_ativ), "\n")
+cat("   % valor preservado:   ", round(valor_cesta/valor_bruto*100, 1), "%\n\n")
+
+if (exists("dados_brutos")) {
+  cat(sprintf("✅ **Total de Registros Base:** %d ações processadas\n\n", nrow(dados_brutos)))
+}
+if (exists("dados_agregado")) {
+  cat(sprintf("✅ **Volume Financeiro Global:** R$ %s\n\n", 
+              format(sum(dados_agregado$valor_total_ciclo, na.rm = TRUE), big.mark = ".", decimal.mark = ",")))
+}
+cat(sprintf("✅ **Produtos Gerados:** 32 Treemaps, 4 Gráficos, 6 Mapas, 2 Planilhas Excel\n\n"))
+cat(sprintf("✅ **Local de Saída:** `%s`\n\n", pasta_saida))
+cat("==============================================================\n")
+```
