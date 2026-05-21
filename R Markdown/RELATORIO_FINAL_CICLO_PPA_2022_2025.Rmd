@@ -736,13 +736,11 @@ cat("✅ Configuração de mapas carregada\n")
 tema_barras <- theme_minimal(base_size = 12) +
   theme(
     legend.position = "bottom",
-    plot.title.position = "plot", 
-    plot.caption.position = "plot",
+    plot.title.position = "plot", plot.caption.position = "plot",
     plot.title    = element_text(face = "bold", size = 13),
     plot.subtitle = element_text(size = 10),
     plot.caption  = element_text(size = 7, hjust = 0),
-    axis.text.y   = element_text(size = 8, family = "sans", face = "plain")
-  )
+    axis.text.y   = element_text(size = 8))
 
 # --- Tabela de correspondência Subprefeitura -> Sigla ---
 tabela_siglas <- tibble::tribble(
@@ -836,58 +834,20 @@ cat("🎯 Marco PPA (R$ 5 bilhões): R$", format(MARCO_PPA, big.mark = "."), "\n
 # Marco de R$ 5 bilhões do PPA
 # ====================================================================
 
-df_plot_g1 <- df_integrado |>
-  mutate(nome_y = str_replace(subprefeitura, "^Subprefeitura( de)? ", ""))
-
-grafico_g1 <- ggplot(df_plot_g1, aes(y = reorder(nome_y, idrgp_alvo))) +
-  # Barras: IDRGP Real
-  geom_col(aes(x = idrgp_real, fill = status_estatistico), 
-           width = 0.7, alpha = 0.85) +
-  # Losango: IDRGP Alvo
-  geom_point(aes(x = idrgp_alvo, shape = "IDRGP Alvo"), 
-             color = "black", fill = "white", stroke = 1.2, size = 3.5) +
-  # Linhas verticais percentuais
-  geom_vline(xintercept = c(0.25, 0.50, 0.75), linetype = "dashed", 
-             color = "#999999", linewidth = 0.3) +
-  annotate("text", x = 0.25, y = 0.5, label = "R$ 1,25 BI", hjust = -0.1, size = 2.8, color = "#999999") +
-  annotate("text", x = 0.50, y = 0.5, label = "R$ 2,50 BI", hjust = -0.1, size = 2.8, color = "#999999") +
-  annotate("text", x = 0.75, y = 0.5, label = "R$ 3,75 BI", hjust = -0.1, size = 2.8, color = "#999999") +
-  # Cores das barras
-  scale_fill_manual(
-    values = c(
-      "Abaixo do IDRGP Alvo" = "#d97a0f",
-      "Dentro do IDRGP Alvo"  = "#0ea1cf",
-      "Acima do IDRGP Alvo"   = "#1A1442"
-    ),
-    name = "Status:"
-  ) +
-  # Forma do losango
-  scale_shape_manual(values = c("IDRGP Alvo" = 23), name = "") +
-  scale_y_discrete(limits = rev, expand = expansion(add = c(0.5, 0.5))) +
-  # Eixo X em percentual
-  scale_x_continuous(labels = scales::label_percent(accuracy = 0.1), limits = c(0, 1), breaks = seq(0, 1, 0.25)) +
-  # Títulos
-  labs(
-    title = "IDRGP 2025 — Distribuição Percentual do Gasto por Subprefeitura",
-    subtitle = paste0("IDRGP Real (barras) e IDRGP Alvo (losango) | Marco PPA: R$ ",
-                      format(MARCO_PPA, big.mark = ".", decimal.mark = ",")),
-    x = "IDRGP (%)", y = NULL,
-    caption = "Fonte: Valores selecionados da cesta de ações do PPA 2022-2025."
-  ) +
-  theme_minimal(base_size = 11) +
-  theme(
-    axis.text.y = element_text(size = 8, hjust = 1, margin = margin(r = 5)),
-    axis.text.x = element_text(size = 9),
-    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
-    plot.subtitle = element_text(size = 10, hjust = 0.5, color = "gray40"),
-    legend.position = "bottom",
-    legend.title = element_text(size = 9, face = "bold"),
-    legend.text = element_text(size = 8),
-    plot.margin = margin(t = 10, r = 20, b = 10, l = 10),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.grid.major.x = element_line(color = "gray85", linewidth = 0.3)
-  )
+grafico_g1 <- ggplot(df_integrado |> mutate(subprefeitura = str_replace(subprefeitura, "^Subprefeitura( de)? ", "")), aes(y = reorder(subprefeitura, idrgp_alvo))) +
+  geom_col(aes(x = idrgp_real, fill = status_estatistico), width = 0.65, alpha = 0.9) +
+  geom_point(aes(x = idrgp_alvo, shape = "IDRGP Alvo"), color = "#c0392b", size = 3) +
+  scale_fill_manual(values = cores_status, name = "Status:") +
+  scale_shape_manual(values = c("IDRGP Alvo" = 18), name = "") +
+  guides(fill = guide_legend(order = 1),
+         shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)) +
+  scale_x_continuous(labels = scales::label_percent(accuracy = 0.1)) +
+  labs(title = "IDRGP 2025 — Distribuição Percentual do Gasto por Subprefeitura",
+       subtitle = "IDRGP Real (barras) e IDRGP Alvo (losango)",
+       x = "IDRGP (%)", y = NULL,
+       caption = paste0(caption_base, "\nTeste: ", toupper(metodo_2025),
+                        " | p = ", formatC(teste_2025$p.value, format = "e", digits = 2))) +
+  tema_barras
 
 # Salvar
 ggsave(file.path(pasta_saida, "graficos", "Produto1_idrgp_alvo_vs_real_pct.png"),
@@ -908,57 +868,27 @@ cat("✅ Produto 1 gerado — IDRGP 2025: Alvo vs Real (%)\n")
 # Valor médio previsto por subprefeitura considerando o marco PPA
 valor_medio_5b <- MARCO_PPA / 32
 
-df_plot_g3 <- df_integrado |>
-  mutate(
-    nome_y = str_replace(subprefeitura, "^Subprefeitura( de)? ", ""),
-    valor_executado = valor,
-    valor_previsto = idrgp_alvo * sum(valor, na.rm = TRUE),
-    status_valor_plot = recode(
-      status_valor,
-      "Valor previsto (R$) superado" = "Valor previsto (R$) atingido"
-    )
-  )
-
-grafico_g3 <- ggplot(df_plot_g3, aes(y = reorder(nome_y, idrgp_alvo))) +
-  # Barras: valor executado
-  geom_col(aes(x = valor_executado, fill = status_valor_plot), 
-           width = 0.7, alpha = 0.85) +
-  # Losango: valor previsto
-  geom_point(aes(x = valor_previsto, shape = "Valor Previsto (R$)"),
-             color = "black", fill = "white", stroke = 1.2, size = 3.5) +
-  # Cores
+grafico_g3 <- ggplot(df_integrado |> mutate(subprefeitura = str_replace(subprefeitura, "^Subprefeitura( de)? ", "")), aes(y = reorder(subprefeitura, idrgp_alvo))) +
+  geom_col(aes(x = valor, fill = status_valor), width = 0.65, alpha = 0.9) +
+  geom_point(aes(x = valor_previsto, shape = "Valor Previsto (R$)"), color = "#c0392b", size = 3) +
   scale_fill_manual(
     values = c(
-      "Valor previsto (R$) atingido"     = "#1A1442",
+      "Valor previsto (R$) superado" = "#1A1442",
       "Valor previsto (R$) não atingido" = "#d97a0f"
     ),
     name = "Status:"
   ) +
-  scale_shape_manual(values = c("Valor Previsto (R$)" = 23), name = "") +
-  scale_y_discrete(limits = rev, expand = expansion(add = c(0.5, 0.5))) +
+  scale_shape_manual(values = c("Valor Previsto (R$)" = 18), name = "") +
+  guides(fill = guide_legend(order = 1),
+         shape = guide_legend(override.aes = list(color = "#c0392b", size = 3), order = 2)) +
   scale_x_continuous(labels = scales::label_number(
     scale_cut = scales::cut_short_scale(), prefix = "R$ ", decimal.mark = ","
-  ), limits = c(0, MARCO_PPA), breaks = seq(0, MARCO_PPA, MARCO_PPA/4)) +
-  labs(
-    title = "IDRGP 2025 — Valor Previsto e Executado por Subprefeitura (R$)",
-    subtitle = NULL,
-    x = "Valor executado (R$)", y = NULL, 
-    caption = "Fonte: Valores selecionados da cesta de ações do PPA 2022-2025."
-  ) +
-  theme_minimal(base_size = 11) +
-  theme(
-    axis.text.y = element_text(size = 8, hjust = 1, margin = margin(r = 5)),
-    axis.text.x = element_text(size = 9),
-    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
-    plot.subtitle = element_text(size = 10, hjust = 0.5, color = "gray40"),
-    legend.position = "bottom",
-    legend.title = element_text(size = 9, face = "bold"),
-    legend.text = element_text(size = 8),
-    plot.margin = margin(t = 10, r = 20, b = 10, l = 10),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.grid.major.x = element_line(color = "gray85", linewidth = 0.3)
-  )
+  )) +
+  labs(title = "IDRGP 2025 — Valor Previsto e Executado por Subprefeitura (R$)",
+       subtitle = "Valor Executado (barras) e Valor Previsto (losango)",
+       x = "Valor executado (R$)", y = NULL,
+       caption = caption_base) +
+  tema_barras
 
 # Salvar
 ggsave(file.path(pasta_saida, "graficos", "Produto2_valores_absolutos.png"),
@@ -1042,146 +972,233 @@ cat("✅ Produto 3 gerado — Série Histórica 2022–2025 (ordem invertida, ma
 
 # Mapas
 
-## Produto 4 — Mapa Coroplético: Balanço do Ciclo PPA (5 Categorias)
+
+## Produto 4 — Mapa Coroplético: Participação Percentual no Ciclo PPA
 ```{r mapa_coropletico_balanco, echo=FALSE, fig.height=10, fig.width=12, message=FALSE, warning=FALSE}
+
 # ====================================================================
-# PRODUTO 4: Mapa coroplético — diferença percentual Real vs Alvo
-# 5 categorias usando paleta derivada do G4
+# PRODUTO 4: Mapa coroplético — distribuição territorial relativa do gasto
+# Classificação em QUARTIS
 # ====================================================================
 
-# Calcular IFV por subprefeitura (ciclo completo)
+# --------------------------------------------------------------------
+# Preparar dados do ciclo
+# --------------------------------------------------------------------
+
 df_ciclo_mapa <- df_ciclo |>
-  mutate(join_key = norm_name(subprefeitura))
-
-# Juntar IVU se existir
-if (!is.null(ivu_df)) {
-  df_ciclo_mapa <- df_ciclo_mapa |>
-    left_join(ivu_df |> select(subprefeitura_pad, ivu), by = c("join_key" = "subprefeitura_pad"))
-} else {
-  df_ciclo_mapa <- df_ciclo_mapa |> mutate(ivu = 1)
-}
-
-df_ciclo_mapa <- df_ciclo_mapa |>
   mutate(
-    gasto_real_ciclo = valor_2022_a_2025,
-    ivu_norm = ivu / max(ivu, na.rm = TRUE),
-    gasto_norm = gasto_real_ciclo / max(gasto_real_ciclo, na.rm = TRUE),
-    ifv = (0.7 * ivu_norm) + (0.3 * gasto_norm)
+    join_key = norm_name(subprefeitura),
+
+    # Participação percentual no ciclo
+    percentual_ciclo =
+      valor_2022_a_2025 /
+      sum(valor_2022_a_2025, na.rm = TRUE) * 100
   )
 
-cat("IFV calculado para", nrow(df_ciclo_mapa), "subprefeituras\n")
-cat("IFV médio:", round(mean(df_ciclo_mapa$ifv, na.rm = TRUE), 3), "\n")
-cat("IFV min:", round(min(df_ciclo_mapa$ifv, na.rm = TRUE), 3), "\n")
-cat("IFV max:", round(max(df_ciclo_mapa$ifv, na.rm = TRUE), 3), "\n")
+# --------------------------------------------------------------------
+# Quartis
+# --------------------------------------------------------------------
 
-breaks_ifv <- quantile(df_ciclo_mapa$ifv, probs = seq(0, 1, by = 0.20), na.rm = TRUE)
-breaks_ifv <- unique(breaks_ifv)
-breaks_ifv[1] <- min(df_ciclo_mapa$ifv, na.rm = TRUE) - 0.0001
-breaks_ifv[length(breaks_ifv)] <- max(df_ciclo_mapa$ifv, na.rm = TRUE) + 0.0001
+breaks_pct <- quantile(
+  df_ciclo_mapa$percentual_ciclo,
+  probs = seq(0, 1, by = 0.25),
+  na.rm = TRUE
+)
 
-br <- round(breaks_ifv, 3)
+breaks_pct <- unique(breaks_pct)
 
-labels_categorias <- c(
-  paste0(br[1], " a ", br[2]),
-  paste0(br[2], " a ", br[3]),
-  paste0(br[3], " a ", br[4]),
-  paste0(br[4], " a ", br[5]),
-  paste0(br[5], " a ", br[6])
+breaks_pct[1] <-
+  min(df_ciclo_mapa$percentual_ciclo, na.rm = TRUE) - 0.0001
+
+breaks_pct[length(breaks_pct)] <-
+  max(df_ciclo_mapa$percentual_ciclo, na.rm = TRUE) + 0.0001
+
+br <- round(breaks_pct, 1)
+
+labels_quartis <- c(
+  paste0(br[1], "% a ", br[2], "%"),
+  paste0(br[2], "% a ", br[3], "%"),
+  paste0(br[3], "% a ", br[4], "%"),
+  paste0(br[4], "% a ", br[5], "%")
 )
 
 df_ciclo_mapa <- df_ciclo_mapa |>
   mutate(
     cat_balanco = cut(
-      ifv,
-      breaks = breaks_ifv,
+      percentual_ciclo,
+      breaks = breaks_pct,
       include.lowest = TRUE,
       right = FALSE,
       labels = FALSE
     ),
-    cat_balanco = factor(cat_balanco, levels = 1:5, labels = labels_categorias)
+
+    cat_balanco = factor(
+      cat_balanco,
+      levels = 1:4,
+      labels = labels_quartis
+    )
   )
 
-# VALIDAÇÃO CRÍTICA: IFV
-ranking_ifv <- df_ciclo_mapa |>
-  select(subprefeitura, ivu, gasto_real_ciclo, ifv) |>
-  arrange(desc(ifv))
-
-cat("\n=== TOP 5 IFV (deve incluir periferia vulnerável com alto gasto) ===\n")
-print(head(ranking_ifv, 5))
-cat("\n=== BOTTOM 5 IFV ===\n")
-print(tail(ranking_ifv, 5))
-
-top5_ivu_medio <- mean(head(ranking_ifv, 5)$ivu, na.rm = TRUE)
-bottom5_ivu_medio <- mean(tail(ranking_ifv, 5)$ivu, na.rm = TRUE)
-
-if (top5_ivu_medio > bottom5_ivu_medio) {
-  cat("✅ IFV está alinhado com vulnerabilidade.\n")
-} else {
-  warning("⚠️ IFV não está priorizando vulnerabilidade. Ajustar pesos.")
-}
-
+# --------------------------------------------------------------------
 # Join com shapefile
+# --------------------------------------------------------------------
+
 sf_balanco <- sf_sp |>
   left_join(
-    df_ciclo_mapa |> select(join_key, ifv, cat_balanco),
+    df_ciclo_mapa |>
+      select(join_key, percentual_ciclo, cat_balanco),
     by = "join_key"
   )
 
-# Identificar ou criar coluna de sigla
-padroes_sigla <- c("sigla", "sg", "SIGLA", "abrev", "ABREV", "sg_subpref")
+# --------------------------------------------------------------------
+# Identificar ou criar sigla
+# --------------------------------------------------------------------
+
+padroes_sigla <- c(
+  "sigla", "sg", "SIGLA",
+  "abrev", "ABREV", "sg_subpref"
+)
+
 col_sigla <- intersect(padroes_sigla, names(sf_balanco))[1]
+
 if (is.na(col_sigla)) {
+
   sf_balanco <- sf_balanco |>
     mutate(sigla = str_sub(sp_nome, 1, 3) |> str_to_upper())
+
 } else if (col_sigla != "sigla") {
-  sf_balanco <- sf_balanco |> rename(sigla = all_of(col_sigla))
+
+  sf_balanco <- sf_balanco |>
+    rename(sigla = all_of(col_sigla))
 }
 
-# Carregar shapefile de distritos para contorno no Produto 4
-arquivo_distritos <- file.path(pasta_dados, "distrito_municipal_v2.shp")
+# --------------------------------------------------------------------
+# Contorno distrital
+# --------------------------------------------------------------------
+
+arquivo_distritos <- file.path(
+  pasta_dados,
+  "distrito_municipal_v2.shp"
+)
+
 if (file.exists(arquivo_distritos)) {
+
   sf::sf_use_s2(FALSE)
-  distritos_sf_mapa <- sf::read_sf(arquivo_distritos) |> sf::st_make_valid()
+
+  distritos_sf_mapa <-
+    sf::read_sf(arquivo_distritos) |>
+    sf::st_make_valid()
+
   if (sf::st_crs(distritos_sf_mapa) != sf::st_crs(sf_balanco)) {
-    distritos_sf_mapa <- sf::st_transform(distritos_sf_mapa, sf::st_crs(sf_balanco))
+
+    distritos_sf_mapa <-
+      sf::st_transform(
+        distritos_sf_mapa,
+        sf::st_crs(sf_balanco)
+      )
   }
+
   sf::sf_use_s2(TRUE)
+
 } else {
+
   distritos_sf_mapa <- NULL
 }
 
-# Cores dinâmicas
-cores_mapa_labels <- setNames(c("#9BD7EA", "#4CB7D8", "#1F78B4", "#0B3C6D", "#041E42"), labels_categorias)
+# --------------------------------------------------------------------
+# Paleta derivada do Produto 3
+# --------------------------------------------------------------------
 
-# Gerar mapa
+cores_mapa_labels <- setNames(
+  c("#9BD7EA", "#4CB7D8", "#1F78B4", "#0B3C6D"),
+  labels_quartis
+)
+
+# --------------------------------------------------------------------
+# MAPA
+# --------------------------------------------------------------------
+
 mapa_balanco <- ggplot(sf_balanco) +
-  geom_sf(aes(fill = cat_balanco), color = "gray30", linewidth = 0.5, alpha = 0.9) +
-  { if(!is.null(distritos_sf_mapa)) geom_sf(data = distritos_sf_mapa, fill = NA, color = "gray60", linetype = "dashed", linewidth = 0.2) } +
+
+  # Subprefeituras
+  geom_sf(
+    aes(fill = cat_balanco),
+    color = "white",
+    linewidth = 0.5,
+    alpha = 0.95
+  ) +
+
+  # Perímetro do município (contorno realçado)
+  geom_sf(
+    data = sf::st_union(sf_balanco),
+    fill = NA,
+    color = "gray30",
+    linewidth = 0.8
+  ) +
+
   scale_fill_manual(
     values = cores_mapa_labels,
-    name = "Índice de Foco na\nVulnerabilidade (IFV)",
+    name = "Participação no\nciclo (%)",
     na.value = "grey80",
     drop = FALSE
   ) +
-  geom_sf_text(aes(label = sigla), size = 3.0, color = "black", fontface = "bold") +
-  geom_sf_text(aes(label = sigla), size = 2.6, color = "white", fontface = "bold") +
-  labs(
-    title = "Índice de Foco na Vulnerabilidade (IFV) — Ciclo 2022-2025",
-    subtitle = "Combinação do IVU (70%) e volume de Gasto Real (30%) por subprefeitura",
-    caption = paste0(caption_base, "\nMarco PPA: R$ ", format(MARCO_PPA, big.mark = "."))
+
+  # Contorno escuro da sigla (halo)
+  geom_sf_text(
+    aes(label = sigla),
+    size = 3.2,
+    color = "gray30",
+    fontface = "bold"
   ) +
+  
+  # Texto da sigla em branco
+  geom_sf_text(
+    aes(label = sigla),
+    size = 3.0,
+    color = "white",
+    fontface = "bold"
+  ) +
+
+  labs(
+    title = "Distribuição Territorial Relativa do Gasto Regionalizável — Ciclo 2022–2025",
+    subtitle = "Classificação em quartis da distribuição percentual acumulada do gasto por subprefeitura",
+    caption = paste0(
+      caption_base,
+      "\nClassificação: Quartis da distribuição percentual do gasto acumulado."
+    )
+  ) +
+
   tema_mapa
 
+# --------------------------------------------------------------------
 # Salvar
-ggsave(file.path(pasta_saida, "mapas", "Produto4_mapa_coropletico_balanco_ppa.png"),
-       mapa_balanco, width = 12, height = 10, dpi = 300)
+# --------------------------------------------------------------------
 
+ggsave(
+  file.path(
+    pasta_saida,
+    "mapas",
+    "Produto4_mapa_coropletico_balanco_ppa.png"
+  ),
+  mapa_balanco,
+  width = 12,
+  height = 10,
+  dpi = 300
+)
+
+# --------------------------------------------------------------------
 # Exibir
-print(mapa_balanco)
-cat("✅ Produto 4 gerado — Mapa coroplético com 5 categorias\n")
+# --------------------------------------------------------------------
 
-# Salvar df_ciclo_mapa para uso no Produto 6 (mapas de localização)
-# cat_balanco será usado como status de cor
+print(mapa_balanco)
+
+cat("✅ Produto 4 gerado — mapa coroplético em quartis (%)\n")
+
+###O mapa em quartis da participação percentual mostra: 
+#distribuição territorial relativa do gasto;
+#hierarquia relativa entre subprefeituras;
+#distribuição espacial do investimento regionalizável;
+
 ```
 
 ## Produto 5 — Tabela de Distância ao Marco R$ 5 Bilhões
@@ -1247,6 +1264,121 @@ if (knitr::is_html_output()) {
 write_xlsx(df_distancia, file.path(pasta_saida, "tabelas", "Produto5_distancia_marco_5b.xlsx"))
 
 cat("✅ Produto 5 gerado — Tabela de distância ao marco R$ 5B\n")
+```
+
+## Produto 5B — Mapa Coroplético: Distância ao Alvo Proporcional (%)
+```{r mapa_coropletico_distancia, echo=FALSE, fig.height=10, fig.width=12, message=FALSE, warning=FALSE}
+# ====================================================================
+# PRODUTO 5B: Mapa coroplético — Distância (%) ao alvo proporcional
+# Classificação em QUARTIS
+# ====================================================================
+
+# Preparar dados com join_key
+df_distancia_mapa <- df_distancia |>
+  mutate(join_key = norm_name(Subprefeitura))
+
+# Quartis
+breaks_dist <- quantile(df_distancia_mapa$`Distância (%)`, probs = seq(0, 1, by = 0.25), na.rm = TRUE)
+breaks_dist <- unique(breaks_dist)
+breaks_dist[1] <- min(df_distancia_mapa$`Distância (%)`, na.rm = TRUE) - 0.0001
+breaks_dist[length(breaks_dist)] <- max(df_distancia_mapa$`Distância (%)`, na.rm = TRUE) + 0.0001
+
+br_dist <- round(breaks_dist, 1)
+
+labels_quartis_dist <- c(
+  paste0(br_dist[1], "% a ", br_dist[2], "%"),
+  paste0(br_dist[2], "% a ", br_dist[3], "%"),
+  paste0(br_dist[3], "% a ", br_dist[4], "%"),
+  paste0(br_dist[4], "% a ", br_dist[5], "%")
+)
+
+df_distancia_mapa <- df_distancia_mapa |>
+  mutate(
+    cat_distancia = cut(
+      `Distância (%)`,
+      breaks = breaks_dist,
+      include.lowest = TRUE,
+      right = FALSE,
+      labels = FALSE
+    ),
+    cat_distancia = factor(cat_distancia, levels = 1:4, labels = labels_quartis_dist)
+  )
+
+# Join com shapefile
+sf_distancia <- sf_sp |>
+  left_join(df_distancia_mapa |> select(join_key, `Distância (%)`, cat_distancia), by = "join_key")
+
+# Identificar sigla
+padroes_sigla <- c("sigla", "sg", "SIGLA", "abrev", "ABREV", "sg_subpref")
+col_sigla <- intersect(padroes_sigla, names(sf_distancia))[1]
+
+if (is.na(col_sigla)) {
+  sf_distancia <- sf_distancia |> mutate(sigla = str_sub(sp_nome, 1, 3) |> str_to_upper())
+} else if (col_sigla != "sigla") {
+  sf_distancia <- sf_distancia |> rename(sigla = all_of(col_sigla))
+}
+
+# Paleta igual a do Produto 4
+cores_mapa_dist <- setNames(
+  c("#9BD7EA", "#4CB7D8", "#1F78B4", "#0B3C6D"),
+  labels_quartis_dist
+)
+
+# Construir Mapa
+mapa_distancia <- ggplot(sf_distancia) +
+  geom_sf(
+    aes(fill = cat_distancia),
+    color = "white",
+    linewidth = 0.5,
+    alpha = 0.95
+  ) +
+  geom_sf(
+    data = sf::st_union(sf_distancia),
+    fill = NA,
+    color = "gray30",
+    linewidth = 0.8
+  ) +
+  scale_fill_manual(
+    values = cores_mapa_dist,
+    name = "Distância em relação\nao alvo (%)",
+    na.value = "grey80",
+    drop = FALSE
+  ) +
+  geom_sf_text(
+    aes(label = sigla),
+    size = 3.2,
+    color = "gray30",
+    fontface = "bold"
+  ) +
+  geom_sf_text(
+    aes(label = sigla),
+    size = 3.0,
+    color = "white",
+    fontface = "bold"
+  ) +
+  labs(
+    title = "Distância Percentual em Relação ao Alvo Proporcional do PPA — Ciclo 2022–2025",
+    subtitle = "Classificação em quartis da distância relativa entre gasto executado e parcela proporcional esperada do marco de R$ 5 bilhões",
+    caption = paste0(
+      caption_base,
+      "\nClassificação: Quartis da distância percentual ao alvo proporcional."
+    )
+  ) +
+  tema_mapa
+
+# Salvar
+ggsave(
+  file.path(pasta_saida, "mapas", "Produto5B_mapa_coropletico_distancia_alvo.png"),
+  mapa_distancia,
+  width = 12,
+  height = 10,
+  dpi = 300
+)
+
+# Exibir
+print(mapa_distancia)
+
+cat("✅ Produto 5B gerado — Mapa coroplético de Distância ao Alvo (%)\n")
 ```
 
 ## Produto 6 — Mapas de Localização (32 Subprefeituras)
@@ -1385,23 +1517,24 @@ if (nrow(distritos_sf) != nrow(dplyr::distinct(distritos_sf, id_distrito))) {
 }
 
 # 4) Perfil (sem geometria) + BBox global ----------------------------------------
-# Usar df_ciclo_mapa do Produto 4 para status de cor (5 categorias)
-df_perfil <- df_ciclo_mapa |>
+# Usar df_distancia_mapa do Produto 5B para status de cor (4 categorias)
+df_perfil <- df_distancia_mapa |>
   select(
-    subprefeitura,
-    idrgp_alvo,
-    idrgp_real = idrgp_real_2022_a_2025,
-    ifv,
-    status = cat_balanco
-  ) |>
-  left_join(tabela_siglas, by = "subprefeitura")
+    join_key,
+    subprefeitura = Subprefeitura,
+    sigla = Sigla,
+    idrgp_alvo = `IDRGP Alvo (%)`,
+    idrgp_real = `IDRGP Real (%)`,
+    distancia = `Distância (%)`,
+    status = cat_distancia
+  )
 
-# 4.1) Tabela de lookup: subprefeitura → categoria de balanço → cor
+# 4.1) Tabela de lookup: subprefeitura → categoria de distância → cor
 lookup_cor_subpref <- df_perfil |>
-  dplyr::select(subprefeitura, sigla, categoria_balanco = status) |>
+  dplyr::select(join_key, subprefeitura, sigla, categoria_distancia = status) |>
   dplyr::mutate(
-    categoria_num = as.numeric(categoria_balanco),
-    cor_mapa = c("#9BD7EA", "#4CB7D8", "#1F78B4", "#0B3C6D", "#041E42")[categoria_num]
+    categoria_num = as.numeric(categoria_distancia),
+    cor_mapa = c("#9BD7EA", "#4CB7D8", "#1F78B4", "#0B3C6D")[categoria_num]
   )
 
 bbox_sp <- sf::st_bbox(todas_subprefs)
@@ -1412,22 +1545,25 @@ gerar_mapa_subpref <- function(nome_sp) {
   # 6.1) Filtros internos
   subpref_ativa <- todas_subprefs |> dplyr::filter(subprefeitura == nome_sp)
   distritos_internos <- distritos_sf |> dplyr::filter(subprefeitura_geo == nome_sp)
-  row_perfil <- df_perfil |> dplyr::filter(subprefeitura == nome_sp)
+  
+  # Usamos a norm_name para garantir o match exato ignorando formatação
+  chave <- norm_name(nome_sp)
+  row_perfil <- df_perfil |> dplyr::filter(join_key == chave)
 
   if (nrow(row_perfil) != 1) {
-    stop("Perfil não encontrado (ou duplicado) para a subprefeitura: ", nome_sp)
+    stop("Perfil não encontrado (ou duplicado) para a subprefeitura: ", nome_sp, " | chave: ", chave)
   }
 
-  # 6.2) Buscar cor da subprefeitura no lookup do balanço PPA
-  cor_sp <- lookup_cor_subpref$cor_mapa[lookup_cor_subpref$subprefeitura == nome_sp]
+  # 6.2) Buscar cor da subprefeitura no lookup da distância ao PPA
+  cor_sp <- lookup_cor_subpref$cor_mapa[lookup_cor_subpref$join_key == chave]
   
   # Fallback de segurança
   if (length(cor_sp) == 0 || is.na(cor_sp)) {
     cor_sp <- "#CCCCCC"
     warning(
-      "Subprefeitura sem cor no lookup de balanço: ", nome_sp, 
+      "Subprefeitura sem cor no lookup de distância: ", nome_sp, 
       " | Usando cinza fallback.\n",
-      "Verifique se df_balanco e lookup_cor_subpref foram gerados corretamente."
+      "Verifique se df_distancia_mapa e lookup_cor_subpref foram gerados corretamente."
     )
   }
 
@@ -1794,4 +1930,351 @@ cat("   - Produto 6: 32 mapas de localização por subprefeitura\n")
 cat("   - Planilha Excel: 32 abas (uma por subprefeitura)\n\n")
 cat(sprintf("✅ **Local de Saída:** `%s`\n\n", pasta_saida))
 cat("==============================================================\n")
+```
+
+```{r tabela_sintese_ciclo, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# CHUNK FINAL: SÍNTESE ANUAL E AGREGADA DO CICLO 2022-2025
+# ============================================================================
+
+cat("\n========================================\n")
+cat("📊 GERANDO TABELA SÍNTESE DO CICLO 2022-2025\n")
+cat("========================================\n")
+
+# Lógica de padronização baseada no matchs_multi_ano.R
+normalizar_texto_local <- function(x) {
+  if (is.null(x)) return(character(0))
+  x <- as.character(x)
+  x_trans <- tryCatch({
+    stringi::stri_trans_general(x, "Latin-ASCII")
+  }, error = function(e) {
+    iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = "")
+  })
+  x_trans |> stringr::str_to_lower() |> stringr::str_squish()
+}
+
+anos_sintese <- c(2022, 2023, 2024, 2025)
+lista_sintese <- list()
+
+tabela_cesta_oficial <- readxl::read_excel(file.path(pasta_dados, "Despesas_IDRGP_2024.xlsx")) |>
+  janitor::clean_names() |>
+  dplyr::mutate(codigo_proj_ativ = as.character(codigo_proj_ativ) |> stringr::str_trim())
+
+codigos_cesta <- unique(tabela_cesta_oficial$codigo_proj_ativ)
+
+auditoria_encontradas <- list()
+auditoria_ausentes <- list()
+auditoria_valor <- list()
+
+for (ano_ref in anos_sintese) {
+  caminho_base <- file.path(pasta_dados, paste0("base_", ano_ref, "_SEPLAN_IDRGP_2025.xlsx"))
+  
+  if (!file.exists(caminho_base)) {
+    cat("⚠️ Base não encontrada para o ano", ano_ref, ":", caminho_base, "\n")
+    next
+  }
+  
+  df_ano <- readxl::read_excel(caminho_base) |> janitor::clean_names()
+  
+  col_valor <- intersect(c("valor_liquidado", "valor_empenhado", "valor_detalhamento_acao", "valor"), names(df_ano))[1]
+  if (is.na(col_valor)) {
+    col_valor <- names(df_ano)[stringr::str_detect(names(df_ano), "valor") & sapply(df_ano, is.numeric)][1]
+  }
+  
+  col_tipo_reg <- intersect(names(df_ano), c("tipo_regionalizacao", "tipo_regionalizac_ao"))[1]
+  col_subpref <- intersect(names(df_ano), c("subprefeitura", "nome_subprefeitura"))[1]
+  
+  df_calc <- df_ano |>
+    dplyr::mutate(
+      valor_calc = suppressWarnings(as.numeric(!!sym(col_valor))),
+      codigo_proj_ativ = as.character(codigo_proj_ativ) |> stringr::str_trim(),
+      tipo_reg_pad = if (!is.na(col_tipo_reg)) normalizar_texto_local(!!sym(col_tipo_reg)) else NA_character_,
+      tem_subpref = if (!is.na(col_subpref)) !is.na(!!sym(col_subpref)) & stringr::str_squish(as.character(!!sym(col_subpref))) != "" & normalizar_texto_local(!!sym(col_subpref)) != "nao se aplica" else FALSE
+    ) |>
+    dplyr::mutate(valor_calc = dplyr::if_else(is.na(valor_calc), 0, valor_calc))
+  
+  despesa_total <- sum(df_calc$valor_calc, na.rm = TRUE)
+  despesa_reg <- sum(df_calc$valor_calc[which(df_calc$tipo_reg_pad == "despesa regionalizavel")], na.rm = TRUE)
+  reg_subpref <- sum(df_calc$valor_calc[which(df_calc$tem_subpref)], na.rm = TRUE)
+  
+  df_cesta <- df_calc |> dplyr::filter(codigo_proj_ativ %in% codigos_cesta)
+  valor_cesta <- sum(df_cesta$valor_calc, na.rm = TRUE)
+  
+  lista_sintese[[as.character(ano_ref)]] <- dplyr::tibble(
+    Ano = as.character(ano_ref),
+    `Despesa Liquidada Total` = despesa_total,
+    `Despesa Regionalizável` = despesa_reg,
+    `Regionalizada por Subprefeitura` = reg_subpref,
+    `Valor da Cesta IDRGP` = valor_cesta
+  )
+  
+  codigos_base_cesta <- unique(df_cesta$codigo_proj_ativ)
+  auditoria_encontradas[[as.character(ano_ref)]] <- length(codigos_base_cesta)
+  auditoria_ausentes[[as.character(ano_ref)]] <- length(setdiff(codigos_cesta, codigos_base_cesta))
+  auditoria_valor[[as.character(ano_ref)]] <- valor_cesta
+}
+
+if (length(lista_sintese) > 0) {
+  df_sintese <- dplyr::bind_rows(lista_sintese)
+  
+  df_total <- df_sintese |>
+    dplyr::summarise(
+      Ano = "Total",
+      `Despesa Liquidada Total` = sum(`Despesa Liquidada Total`, na.rm = TRUE),
+      `Despesa Regionalizável` = sum(`Despesa Regionalizável`, na.rm = TRUE),
+      `Regionalizada por Subprefeitura` = sum(`Regionalizada por Subprefeitura`, na.rm = TRUE),
+      `Valor da Cesta IDRGP` = sum(`Valor da Cesta IDRGP`, na.rm = TRUE)
+    )
+  
+  df_sintese <- dplyr::bind_rows(df_sintese, df_total)
+  
+  total_cesta_quadrienio <- df_total$`Valor da Cesta IDRGP`
+  
+  df_sintese <- df_sintese |>
+    dplyr::mutate(
+      `% Regionalizado` = dplyr::if_else(`Despesa Liquidada Total` == 0, 0, `Despesa Regionalizável` / `Despesa Liquidada Total`),
+      `% Regionalizado por Subprefeitura` = dplyr::if_else(`Despesa Liquidada Total` == 0, 0, `Regionalizada por Subprefeitura` / `Despesa Liquidada Total`),
+      `% da Cesta no Ano` = dplyr::if_else(`Despesa Liquidada Total` == 0, 0, `Valor da Cesta IDRGP` / `Despesa Liquidada Total`),
+      `% da Cesta no Quadriênio` = dplyr::if_else(Ano == "Total", 1, if (total_cesta_quadrienio == 0) 0 else `Valor da Cesta IDRGP` / total_cesta_quadrienio),
+      `Distância Absoluta da Cesta` = `Regionalizada por Subprefeitura` - `Valor da Cesta IDRGP`,
+      `Distância Percentual da Cesta` = dplyr::if_else(`Valor da Cesta IDRGP` == 0, 0, `Distância Absoluta da Cesta` / `Valor da Cesta IDRGP`)
+    )
+  
+  caminho_xlsx <- file.path(pasta_saida, "tabelas", "tabela_sintese_ciclo_2022_2025.xlsx")
+  caminho_csv <- file.path(pasta_saida, "tabelas", "tabela_sintese_ciclo_2022_2025.csv")
+  
+  writexl::write_xlsx(df_sintese, caminho_xlsx)
+  write.csv2(df_sintese, caminho_csv, row.names = FALSE, na = "")
+  
+  cat("✅ Tabela síntese gerada e exportada!\n")
+  cat("   - Excel: ", caminho_xlsx, "\n")
+  cat("   - CSV:   ", caminho_csv, "\n")
+  
+  cat("\n--- AUDITORIA DA SÍNTESE ---\n")
+  for (ano in names(auditoria_encontradas)) {
+    cat(sprintf("Ano %s:\n", ano))
+    cat(sprintf("  - Ações da cesta encontradas: %d\n", auditoria_encontradas[[ano]]))
+    cat(sprintf("  - Ações da cesta ausentes:    %d\n", auditoria_ausentes[[ano]]))
+    cat(sprintf("  - Valor total da cesta:       R$ %s\n", format(auditoria_valor[[ano]], big.mark = ".", decimal.mark = ",", nsmall = 2)))
+  }
+  cat(sprintf("\nVALIDAÇÃO - Total da Cesta no Quadriênio: R$ %s\n", format(total_cesta_quadrienio, big.mark = ".", decimal.mark = ",", nsmall = 2)))
+  cat("========================================\n\n")
+  
+  if (knitr::is_html_output()) {
+    DT::datatable(
+      df_sintese,
+      options = list(dom = 't', ordering = FALSE, pageLength = 5, scrollX = TRUE),
+      rownames = FALSE,
+      caption = "Síntese Anual e Agregada do Ciclo 2022–2025"
+    ) |>
+      DT::formatCurrency(
+        c("Despesa Liquidada Total", "Despesa Regionalizável", 
+          "Regionalizada por Subprefeitura", "Valor da Cesta IDRGP", 
+          "Distância Absoluta da Cesta"), 
+        currency = "R$ ", interval = 3, mark = ".", dec.mark = ","
+      ) |>
+      DT::formatPercentage(
+        c("% Regionalizado", "% Regionalizado por Subprefeitura", 
+          "% da Cesta no Ano", "% da Cesta no Quadriênio", 
+          "Distância Percentual da Cesta"), 
+        digits = 2
+      ) |>
+      DT::formatStyle(
+        'Ano',
+        target = 'row',
+        backgroundColor = DT::styleEqual(c('Total'), c('#f0f0f0')),
+        fontWeight = DT::styleEqual(c('Total'), c('bold'))
+      )
+  } else if (knitr::is_latex_output()) {
+    df_pdf <- df_sintese |>
+      dplyr::mutate(dplyr::across(c(`Despesa Liquidada Total`, `Despesa Regionalizável`, 
+                                    `Regionalizada por Subprefeitura`, `Valor da Cesta IDRGP`, 
+                                    `Distância Absoluta da Cesta`), 
+                                  ~ paste0("R$ ", format(.x, big.mark = ".", decimal.mark = ",", digits = 0, scientific = FALSE)))) |>
+      dplyr::mutate(dplyr::across(c(`% Regionalizado`, `% Regionalizado por Subprefeitura`, 
+                                    `% da Cesta no Ano`, `% da Cesta no Quadriênio`, 
+                                    `Distância Percentual da Cesta`), 
+                                  ~ paste0(format(round(.x * 100, 2), decimal.mark = ","), "%")))
+    
+    print(
+      df_pdf |>
+        knitr::kable(format = "latex", booktabs = TRUE, linesep = "") |>
+        kableExtra::kable_styling(latex_options = c("striped", "hold_position", "scale_down"), font_size = 7) |>
+        kableExtra::row_spec(nrow(df_pdf), bold = TRUE, background = "#F7F9FC")
+    )
+  }
+}
+```
+
+```{r tabelas_detalhadas_auditoria, echo=FALSE, message=FALSE, warning=FALSE}
+# ============================================================================
+# CHUNK NOVO: TABELAS DETALHADAS DE AÇÕES (ENCONTRADAS E AUSENTES)
+# ============================================================================
+
+cat("\n========================================\n")
+cat("📊 GERANDO TABELAS DETALHADAS DE AÇÕES POR SUBPREFEITURA\n")
+cat("========================================\n")
+
+# 1. Carregar e unificar todas as bases anuais apenas para a cesta
+lista_dados_anuais <- list()
+
+for (ano_ref in anos_sintese) {
+  caminho_base <- file.path(pasta_dados, paste0("base_", ano_ref, "_SEPLAN_IDRGP_2025.xlsx"))
+  if (file.exists(caminho_base)) {
+    df_temp <- readxl::read_excel(caminho_base) |> janitor::clean_names()
+    
+    col_valor <- intersect(c("valor_liquidado", "valor_empenhado", "valor_detalhamento_acao", "valor"), names(df_temp))[1]
+    if (is.na(col_valor)) {
+      col_valor <- names(df_temp)[stringr::str_detect(names(df_temp), "valor") & sapply(df_temp, is.numeric)][1]
+    }
+    col_subpref <- intersect(names(df_temp), c("subprefeitura", "nome_subprefeitura"))[1]
+    col_desc <- intersect(names(df_temp), c("descricao_proj_ativ", "nome_proj_ativ", "descricao_acao"))[1]
+    
+    df_temp <- df_temp |>
+      dplyr::mutate(
+        Ano = ano_ref,
+        Valor = suppressWarnings(as.numeric(!!sym(col_valor))),
+        codigo_proj_ativ = as.character(codigo_proj_ativ) |> stringr::str_trim(),
+        Subprefeitura = if (!is.na(col_subpref)) as.character(!!sym(col_subpref)) else NA_character_,
+        Descricao = if (!is.na(col_desc)) as.character(!!sym(col_desc)) else NA_character_
+      ) |>
+      dplyr::filter(codigo_proj_ativ %in% codigos_cesta) |>
+      dplyr::filter(!is.na(Subprefeitura) & stringr::str_squish(Subprefeitura) != "" & stringr::str_to_lower(Subprefeitura) != "nao se aplica")
+    
+    lista_dados_anuais[[as.character(ano_ref)]] <- df_temp |>
+      dplyr::select(Ano, Subprefeitura, codigo_proj_ativ, Descricao, Valor)
+  }
+}
+
+if (length(lista_dados_anuais) > 0) {
+  df_todos_anos <- dplyr::bind_rows(lista_dados_anuais) |>
+    dplyr::mutate(
+      Valor = dplyr::if_else(is.na(Valor), 0, Valor),
+      Subprefeitura = stringr::str_to_title(stringr::str_remove(stringr::str_to_lower(Subprefeitura), "^subprefeitura\\s+(de\\s+)?"))
+    )
+
+  # Obter lista de todas as subprefeituras oficiais da base (ou do shapefile se preferir)
+  todas_subs <- sort(unique(df_todos_anos$Subprefeitura))
+  
+  # Ações oficiais da cesta
+  todas_acoes <- tabela_cesta_oficial |>
+    dplyr::select(codigo_proj_ativ, descricao_proj_ativ) |>
+    dplyr::distinct(codigo_proj_ativ, .keep_all = TRUE)
+
+  # -------------------------------------------------------------------------
+  # TABELA 2: Tabelas detalhadas para cada Ano e Subprefeitura
+  # -------------------------------------------------------------------------
+  grade_completa_anual <- tidyr::expand_grid(
+    Ano = anos_sintese,
+    Subprefeitura = todas_subs,
+    codigo_proj_ativ = todas_acoes$codigo_proj_ativ
+  )
+
+  df_anual_agrupado <- df_todos_anos |>
+    dplyr::group_by(Ano, Subprefeitura, codigo_proj_ativ) |>
+    dplyr::summarise(Valor_Ano = sum(Valor, na.rm = TRUE), .groups = "drop")
+
+  tabela_detalhada_anual <- grade_completa_anual |>
+    dplyr::left_join(todas_acoes, by = "codigo_proj_ativ") |>
+    dplyr::left_join(df_anual_agrupado, by = c("Ano", "Subprefeitura", "codigo_proj_ativ")) |>
+    dplyr::mutate(
+      Valor_Ano = dplyr::if_else(is.na(Valor_Ano), 0, Valor_Ano),
+      Status = dplyr::if_else(Valor_Ano > 0, "Encontrada", "Ausente")
+    ) |>
+    dplyr::rename(
+      `Código Ação` = codigo_proj_ativ,
+      `Descrição Ação` = descricao_proj_ativ,
+      `Valor no Ano` = Valor_Ano
+    ) |>
+    dplyr::arrange(Ano, Subprefeitura, `Código Ação`)
+
+  # -------------------------------------------------------------------------
+  # TABELA 1: Resumo Quadrienal - Consulta de cada ação em cada subprefeitura
+  # -------------------------------------------------------------------------
+  df_quadrienio <- df_todos_anos |>
+    dplyr::group_by(Subprefeitura, codigo_proj_ativ) |>
+    dplyr::summarise(Valor_Total_Quadrienio = sum(Valor, na.rm = TRUE), .groups = "drop")
+
+  grade_completa_quad <- tidyr::expand_grid(
+    Subprefeitura = todas_subs,
+    codigo_proj_ativ = todas_acoes$codigo_proj_ativ
+  )
+
+  # Adicionar os valores anuais como colunas para facilitar a consulta
+  df_anual_largo <- tabela_detalhada_anual |>
+    dplyr::select(Ano, Subprefeitura, `Código Ação`, `Valor no Ano`) |>
+    tidyr::pivot_wider(names_from = Ano, values_from = `Valor no Ano`, names_prefix = "Valor ")
+
+  tabela_consulta_acao_subpref <- grade_completa_quad |>
+    dplyr::left_join(todas_acoes, by = "codigo_proj_ativ") |>
+    dplyr::left_join(df_quadrienio, by = c("Subprefeitura", "codigo_proj_ativ")) |>
+    dplyr::mutate(
+      Valor_Total_Quadrienio = dplyr::if_else(is.na(Valor_Total_Quadrienio), 0, Valor_Total_Quadrienio),
+      Status = dplyr::if_else(Valor_Total_Quadrienio > 0, "Encontrada", "Ausente")
+    ) |>
+    dplyr::rename(
+      `Código Ação` = codigo_proj_ativ,
+      `Descrição Ação` = descricao_proj_ativ,
+      `Valor Quadriênio` = Valor_Total_Quadrienio
+    ) |>
+    dplyr::left_join(df_anual_largo, by = c("Subprefeitura", "Código Ação")) |>
+    dplyr::arrange(Subprefeitura, `Código Ação`)
+
+  # Reordenar colunas para colocar os anos antes do total
+  colunas_anos <- paste0("Valor ", anos_sintese)
+  colunas_ordem <- c("Subprefeitura", "Código Ação", "Descrição Ação", colunas_anos, "Valor Quadriênio", "Status")
+  tabela_consulta_acao_subpref <- tabela_consulta_acao_subpref |>
+    dplyr::select(dplyr::all_of(colunas_ordem))
+
+  # -------------------------------------------------------------------------
+  # EXPORTAÇÃO
+  # -------------------------------------------------------------------------
+  caminho_auditoria_pasta <- file.path(pasta_saida, "tabelas")
+  if (!dir.exists(caminho_auditoria_pasta)) dir.create(caminho_auditoria_pasta, recursive = TRUE)
+  
+  caminho_export_completo <- file.path(caminho_auditoria_pasta, "auditoria_acoes_detalhada_completa.xlsx")
+
+  if (requireNamespace("openxlsx", quietly = TRUE)) {
+    wb <- openxlsx::createWorkbook()
+    
+    # Adicionar estilo de cabeçalho
+    hs <- openxlsx::createStyle(fontColour = "#ffffff", fgFill = "#1A1442", halign = "center", textDecoration = "bold")
+    
+    # Aba 1: Consulta Quadrienal (Resumo)
+    openxlsx::addWorksheet(wb, "Consulta_Quadrienio")
+    openxlsx::writeData(wb, "Consulta_Quadrienio", tabela_consulta_acao_subpref)
+    openxlsx::addStyle(wb, "Consulta_Quadrienio", style = hs, rows = 1, cols = 1:ncol(tabela_consulta_acao_subpref), gridExpand = TRUE)
+    openxlsx::setColWidths(wb, "Consulta_Quadrienio", cols = 1:ncol(tabela_consulta_acao_subpref), widths = "auto")
+    
+    # Aba 2 a 5: Detalhado por Ano
+    for (a in anos_sintese) {
+      aba_ano <- paste0("Ano_", a)
+      df_ano_aba <- tabela_detalhada_anual |> dplyr::filter(Ano == a) |> dplyr::select(-Ano)
+      openxlsx::addWorksheet(wb, aba_ano)
+      openxlsx::writeData(wb, aba_ano, df_ano_aba)
+      openxlsx::addStyle(wb, aba_ano, style = hs, rows = 1, cols = 1:ncol(df_ano_aba), gridExpand = TRUE)
+      openxlsx::setColWidths(wb, aba_ano, cols = 1:ncol(df_ano_aba), widths = "auto")
+    }
+    
+    openxlsx::saveWorkbook(wb, caminho_export_completo, overwrite = TRUE)
+    cat("✅ Planilha unificada de auditoria exportada com sucesso:\n")
+    cat("   📂", caminho_export_completo, "\n")
+  } else {
+    # Fallback se openxlsx não estiver instalado
+    writexl::write_xlsx(
+      list(
+        "Consulta_Quadrienio" = tabela_consulta_acao_subpref,
+        "Ano_2022" = tabela_detalhada_anual |> dplyr::filter(Ano == 2022) |> dplyr::select(-Ano),
+        "Ano_2023" = tabela_detalhada_anual |> dplyr::filter(Ano == 2023) |> dplyr::select(-Ano),
+        "Ano_2024" = tabela_detalhada_anual |> dplyr::filter(Ano == 2024) |> dplyr::select(-Ano),
+        "Ano_2025" = tabela_detalhada_anual |> dplyr::filter(Ano == 2025) |> dplyr::select(-Ano)
+      ), 
+      path = caminho_export_completo
+    )
+    cat("✅ Planilha unificada de auditoria exportada usando writexl:\n")
+    cat("   📂", caminho_export_completo, "\n")
+  }
+} else {
+  cat("⚠️ Nenhuma ação regionalizada encontrada nas bases anuais.\n")
+}
 ```
