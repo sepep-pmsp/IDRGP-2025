@@ -50,15 +50,15 @@ obter_caminho_base <- function(ano) {
   padroes <- c(
     sprintf("base_%d_SEPLAN_IDRGP_2025.xlsx", ano),
     sprintf("base_%d_SEPLAN_2026.xlsx", ano),
-    sprintf("base_%d_SEPLAN.xlsx", ano)
+    sprintf("base_%d_SEPLAN.xlsx", ano) 
   )
-  for (padrao in padroes) {
+  for (padrao in padroes) { 
     caminho <- file.path(caminho_dados, padrao)
-    if (file.exists(caminho)) {
+    if (file.exists(caminho)) { 
       return(caminho)
     }
   }
-  # Retorna o padrão default se nenhum for encontrado
+  # Retorna o padrão default se nenhum for encontrado 
   return(file.path(caminho_dados, sprintf("base_%d_SEPLAN_IDRGP_2025.xlsx", ano)))
 }
 
