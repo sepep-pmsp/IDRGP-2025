@@ -1936,7 +1936,7 @@ if (knitr::is_latex_output()) {
 | > 20% | Azul muito escuro (#041E42) | +20% ou mais |
 
 ### Elaboração
-**CPMA** — Coordenadoria, Planejamento e Monitoramento de Ações  
+**CPMA** — Coordenadoria, Planejamento, Monitoramento e Avaliação  
 **SIME/SEPLAN/PMSP** — Prefeitura Municipal de São Paulo  
 Documento gerado em: `r format(Sys.Date(), '%d de %B de %Y')`
 
