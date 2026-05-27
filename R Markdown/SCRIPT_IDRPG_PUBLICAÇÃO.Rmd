@@ -1,0 +1,406 @@
+---
+title: "IDRGP 2025 - Execução Orçamentária Regionalizável dos Gastos Públicos (Ciclo PPA 2022-2025)"
+author: "CPMA/SIME/SEPLAN/PMSP"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+    theme: flatly
+    highlight: tango
+    code_folding: show
+    df_print: paged
+---
+
+# 1. Apresentação do Projeto
+
+O **Índice de Distribuição Regional do Gasto Público (IDRGP)** é uma ferramenta de monitoramento da equidade territorial no orçamento municipal. Ele compara o percentual do orçamento gasto em uma subprefeitura (IDRGP Real) com uma meta ideal (IDRGP Alvo), baseada no Índice de Vulnerabilidade Urbana (IVU).
+
+O objetivo deste documento é fornecer uma análise **reprodutível** e **transparente** da execução orçamentária territorializada no município de São Paulo, abrangendo o ciclo do Plano Plurianual (PPA) de 2022 a 2025.
+
+# 2. Objetivos da Análise
+
+Este script processa os dados brutos de execução orçamentária e gera produtos analíticos:
+1. Gráficos comparativos de metas vs. execução (percentual e absoluto).
+2. Evolução histórica do investimento (2022 a 2025).
+3. Mapas temáticos e de localização por subprefeitura.
+4. Tabelas de dados abertos consolidadas.
+
+# 3. Pacotes Necessários
+
+Para garantir a reprodutibilidade, este bloco carrega os pacotes essenciais. Utilizamos o pacote `here` para garantir que todos os caminhos de arquivos funcionem independentemente de onde o repositório seja clonado.
+
+```{r setup, message=FALSE, warning=FALSE}
+# Lista de pacotes necessários para a análise
+pacotes <- c("tidyverse", "readxl", "writexl", "openxlsx", "janitor", "sf", 
+             "ggplot2", "scales", "stringi", "stringr", "DT", "knitr", "here", "ggspatial")
+
+# Verifica se os pacotes estão instalados; caso não, tenta instalá-los.
+# install.packages(setdiff(pacotes, rownames(installed.packages())))
+
+# Carrega todos os pacotes
+lapply(pacotes, library, character.only = TRUE)
+
+# Cria as pastas de saída dinamicamente usando caminhos relativos
+pasta_dados <- here::here("dados")
+pasta_saida <- here::here("resultados", "Produtos_Cesta_2026")
+
+dir.create(file.path(pasta_saida, "graficos"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(pasta_saida, "tabelas"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(pasta_saida, "mapas"), recursive = TRUE, showWarnings = FALSE)
+dir.create(file.path(pasta_saida, "mapas_subprefeituras"), recursive = TRUE, showWarnings = FALSE)
+
+# Definimos o marco financeiro do PPA (5 bilhões)
+MARCO_PPA <- 5e9
+```
+
+# 4. Estrutura dos Dados e Funções de Limpeza
+
+Antes de iniciar, definimos algumas funções e tabelas de referência para padronizar os nomes das subprefeituras. Isso garante que bases diferentes "conversem" entre si sem problemas de acentuação ou espaços.
+
+```{r padronizacao}
+# Tabela de correspondência com as siglas oficiais de cada subprefeitura
+tabela_siglas <- tibble::tribble(
+  ~subprefeitura, ~sigla,
+  "Subprefeitura Aricanduva/Formosa/Carrão", "AF",
+  "Subprefeitura Butantã", "BT",
+  "Subprefeitura Campo Limpo", "CL",
+  "Subprefeitura Capela do Socorro", "CS",
+  "Subprefeitura Casa Verde/Cachoeirinha", "CV",
+  "Subprefeitura Cidade Ademar", "AD",
+  "Subprefeitura Cidade Tiradentes", "CT",
+  "Subprefeitura de Guaianases", "GU",
+  "Subprefeitura Ermelino Matarazzo", "EM",
+  "Subprefeitura Freguesia/Brasilândia", "FO",
+  "Subprefeitura Ipiranga", "IP",
+  "Subprefeitura Itaim Paulista", "IT",
+  "Subprefeitura Itaquera", "IQ",
+  "Subprefeitura Jabaquara", "JA",
+  "Subprefeitura Jaçanã/Tremembé", "JT",
+  "Subprefeitura Lapa", "LA",
+  "Subprefeitura M'Boi Mirim", "MB",
+  "Subprefeitura Mooca", "MO",
+  "Subprefeitura Parelheiros", "PA",
+  "Subprefeitura Penha", "PE",
+  "Subprefeitura Perus/Anhanguera", "PR",
+  "Subprefeitura Pinheiros", "PI",
+  "Subprefeitura Pirituba/Jaraguá", "PJ",
+  "Subprefeitura Santana/Tucuruvi", "ST",
+  "Subprefeitura Santo Amaro", "SA",
+  "Subprefeitura São Mateus", "SM",
+  "Subprefeitura São Miguel Paulista", "MP",
+  "Subprefeitura Sapopemba", "SB",
+  "Subprefeitura Sé", "SE",
+  "Subprefeitura de Vila Prudente", "VP",
+  "Subprefeitura Vila Maria/Vila Guilherme", "MG",
+  "Subprefeitura Vila Mariana", "VM"
+)
+
+# Função para normalizar strings (remove acentos, espaços extras, padroniza)
+norm_name <- function(x) {
+  x <- as.character(x)
+  x[is.na(x)] <- ""
+  x <- stringi::stri_trans_general(x, "Latin-ASCII") # Remove acentos
+  x <- stringr::str_to_lower(x) # Letras minúsculas
+  x <- stringr::str_squish(x) # Remove espaços extras
+  x <- stringr::str_replace_all(x, "^subprefeitura\\s+(de\\s+)?", "") # Tira a palavra "subprefeitura"
+  x <- stringr::str_replace_all(x, "[^a-z0-9]+", "") # Mantém só letras e números
+  x <- dplyr::case_when(
+    x %in% c("saomiguel", "saomiguelpaulista") ~ "saomiguelpaulista",
+    x %in% c("itaim", "itaimpaulista") ~ "itaimpaulista",
+    x %in% c("perus", "anhanguera", "perusanhanguera") ~ "perusanhanguera",
+    x %in% c("mboimirim", "mboimirim") ~ "mboimirim",
+    TRUE ~ x
+  )
+  return(x)
+}
+
+# Criamos uma chave (join_key) para facilitar o cruzamento de bases posteriormente
+tabela_siglas <- tabela_siglas |> mutate(join_key = norm_name(subprefeitura))
+
+# Tema padrão para os gráficos do projeto
+tema_idrgp <- theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13, color = "#1a1a2e"),
+    plot.subtitle = element_text(size = 10, color = "#666666"),
+    plot.caption = element_text(size = 8, color = "#999999", hjust = 1),
+    legend.position = "bottom",
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+theme_set(tema_idrgp)
+cores_status <- c("Abaixo do IDRGP Alvo" = "#d97a0f", "Dentro do IDRGP Alvo" = "#0ea1cf", "Acima do IDRGP Alvo" = "#1A1442")
+```
+
+# 5. Importação das Bases
+
+Neste projeto, utilizamos exclusivamente as bases disponibilizadas na pasta `dados/`. A base principal (`base_resumida_ppa_idrgp.xlsx`) já contempla apenas as ações validadas pela metodologia, garantindo total isolamento de servidores externos.
+
+```{r importacao, message=FALSE, warning=FALSE}
+# 1. Carrega a base de execução orçamentária já resumida
+# O comando clean_names() do pacote janitor converte as colunas para o formato snake_case sem espaços.
+dados_brutos_raw <- read_excel(file.path(pasta_dados, "base_resumida_ppa_idrgp.xlsx")) |> clean_names()
+
+# 2. Carrega os dados do IVU (Índice de Vulnerabilidade Urbana) - nossa referência para o "Alvo"
+ivu_raw <- read_excel(file.path(pasta_dados, "ivu_subprefeituras_2025.xlsx")) |> clean_names()
+
+# Tratamos a base do IVU renomeando colunas e criando a chave padronizada (join_key)
+ivu_df <- ivu_raw |>
+  transmute(
+    subprefeitura = nome_subpref,
+    ivu = as.numeric(indice_ivu) # Asseguramos que o campo IVU será numérico
+  ) |>
+  mutate(join_key = norm_name(subprefeitura))
+
+# 3. Carrega os mapas espaciais (Shapefiles) de subprefeituras e distritos
+sf_sp <- st_read(file.path(pasta_dados, "subprefeitura_v2.shp"), quiet = TRUE) |> clean_names()
+
+# Buscamos de forma automatizada o nome da coluna das subprefeituras no shapefile
+col_nome <- intersect(names(sf_sp), c("sp_nome", "nm_subpref", "subprefei", "nome"))[1]
+sf_sp <- sf_sp |> rename(sp_nome = all_of(col_nome)) |> mutate(join_key = norm_name(sp_nome))
+
+distritos_sf <- st_read(file.path(pasta_dados, "distrito_municipal_v2.shp"), quiet = TRUE) |> clean_names()
+```
+
+# 6. Tratamento dos Dados
+
+Aqui formatamos as colunas e garantimos que os dados orçamentários cruzem perfeitamente com a nossa tabela de siglas oficial.
+
+```{r tratamento}
+# Convertendo tipos para não haver erros matemáticos, e cruzando com as siglas
+dados_base <- dados_brutos_raw |>
+  transmute(
+    chave = as.character(chave),
+    ano_empenho = as.integer(ano_empenho),
+    codigo_proj_ativ = str_trim(as.character(codigo_proj_ativ)),
+    descricao_proj_ativ = str_squish(as.character(descricao_proj_ativ)),
+    subprefeitura_original = str_squish(as.character(subprefeitura)),
+    valor = as.numeric(valor),
+    join_key = norm_name(subprefeitura) # Padroniza para cruzamento
+  ) |>
+  inner_join(tabela_siglas, by = "join_key") # Junta com as siglas para garantir nomes corretos
+```
+
+# 7. Construção dos Indicadores
+
+Para calcular o IDRGP (Índice de Distribuição Regional do Gasto Público), agrupamos os valores em dois momentos: no ano de referência (2025) e o acumulado do ciclo (2022-2025).
+
+A lógica matemática do IDRGP é:
+* **IDRGP Real (%)**: Gastos efetivados na Subprefeitura / Total Gasto na Cidade.
+* **IDRGP Alvo (%)**: Proporção do IVU da Subprefeitura / Somatória do IVU da Cidade.
+
+Se o IDRGP Real for substancialmente menor que o IDRGP Alvo, entendemos que o gasto daquela região ficou abaixo da meta de vulnerabilidade estipulada.
+
+```{r indicadores, message=FALSE, warning=FALSE}
+# --- 1. Agregações para 2025 ---
+df_idrgp_2025 <- dados_base |>
+  filter(ano_empenho == 2025) |>
+  group_by(subprefeitura, sigla, join_key) |>
+  summarise(valor_executado = sum(valor, na.rm = TRUE), .groups = "drop") |>
+  mutate(total_municipio = sum(valor_executado, na.rm = TRUE)) |>
+  left_join(ivu_df |> select(join_key, ivu), by = "join_key") |>
+  mutate(
+    idrgp_alvo = ivu / sum(ivu, na.rm = TRUE),
+    idrgp_real = valor_executado / total_municipio,
+    diferenca = idrgp_real - idrgp_alvo,
+    valor_previsto = idrgp_alvo * total_municipio,
+    status_valor = if_else(valor_executado >= valor_previsto, "Valor previsto (R$) superado", "Valor previsto (R$) não atingido")
+  )
+
+# Calculamos o Teste de Kolmogorov-Smirnov e criamos um Intervalo de Confiança para 2025
+# Isto ajuda a categorizar as subprefeituras de modo estatisticamente robusto.
+teste_ks_25 <- ks.test(scale(df_idrgp_2025$diferenca)[,1], "pnorm")
+if (teste_ks_25$p.value <= 0.05) {
+  teste_25 <- wilcox.test(df_idrgp_2025$idrgp_real, df_idrgp_2025$idrgp_alvo, paired = TRUE, conf.int = TRUE)
+} else {
+  teste_25 <- t.test(df_idrgp_2025$idrgp_real, df_idrgp_2025$idrgp_alvo, paired = TRUE)
+}
+
+ic_inf_25 <- teste_25$conf.int[1]
+ic_sup_25 <- teste_25$conf.int[2]
+
+# Categorizamos o status da subprefeitura baseados no IC.
+df_idrgp_2025 <- df_idrgp_2025 |>
+  mutate(
+    status_estatistico = case_when(
+      diferenca < ic_inf_25 ~ "Abaixo do IDRGP Alvo",
+      diferenca > ic_sup_25 ~ "Acima do IDRGP Alvo",
+      TRUE ~ "Dentro do IDRGP Alvo"
+    ),
+    status_estatistico = factor(status_estatistico, levels = names(cores_status))
+  )
+
+# --- 2. Agregações para o Ciclo todo (2022-2025) ---
+df_ciclo <- dados_base |>
+  group_by(subprefeitura, sigla, join_key) |>
+  summarise(valor_acumulado = sum(valor, na.rm = TRUE), .groups = "drop") |>
+  mutate(total_municipio = sum(valor_acumulado, na.rm = TRUE)) |>
+  left_join(ivu_df |> select(join_key, ivu), by = "join_key") |>
+  mutate(
+    idrgp_alvo = ivu / sum(ivu, na.rm = TRUE),
+    idrgp_real_ciclo = valor_acumulado / total_municipio,
+    diferenca_ciclo = idrgp_real_ciclo - idrgp_alvo
+  )
+```
+
+# 8. Análises Territoriais (Série Histórica)
+
+Nesta etapa, preparamos o agregado "ano a ano" (long format) para entender se houve melhoria ou piora dos gastos nas subprefeituras ao longo dos últimos 4 anos do ciclo.
+
+```{r serie_historica}
+# Agrupamos por Ano + Subprefeitura
+df_longo <- dados_base |>
+  group_by(ano_empenho, subprefeitura, sigla, join_key) |>
+  summarise(valor_ano = sum(valor, na.rm = TRUE), .groups = "drop") |>
+  left_join(ivu_df |> select(join_key, ivu), by = "join_key") |>
+  mutate(
+    idrgp_alvo = ivu / sum(ivu, na.rm = TRUE),
+    # A ordem dos níveis é importante para como os dados serão empilhados (stacked) no gráfico
+    ano_empenho = factor(ano_empenho, levels = c("2025", "2024", "2023", "2022")) 
+  )
+```
+
+# 9. Visualizações e Mapas
+
+Aqui geramos os painéis que servirão de evidência (gráficos e mapas). Utilizamos bibliotecas focadas na elaboração de publicações institucionais.
+
+```{r graficos, message=FALSE, warning=FALSE}
+caption_base <- "Fonte: SF-PMSP | Elaboração: PMSP (IDRGP)"
+
+# --- PRODUTO 1: Gráfico G1 (Alvo vs Real em %) ---
+grafico_g1 <- ggplot(df_idrgp_2025, aes(y = reorder(str_remove(subprefeitura, "Subprefeitura( de)? "), idrgp_alvo))) +
+  geom_col(aes(x = idrgp_real, fill = status_estatistico), width = 0.65, alpha = 0.9) +
+  geom_point(aes(x = idrgp_alvo, shape = "IDRGP Alvo"), color = "#c0392b", size = 3) +
+  scale_fill_manual(values = cores_status, name = "Status:") +
+  scale_shape_manual(values = c("IDRGP Alvo" = 18), name = "") +
+  scale_x_continuous(labels = scales::label_percent(accuracy = 0.1)) +
+  labs(title = "IDRGP 2025 — Distribuição Percentual do Gasto",
+       subtitle = "IDRGP Real (barras) e IDRGP Alvo (losango)", x = "IDRGP (%)", y = NULL, caption = caption_base)
+
+ggsave(file.path(pasta_saida, "graficos", "Produto1_idrgp_alvo_vs_real_pct.png"), grafico_g1, width = 10, height = 12, dpi = 300, bg="white")
+
+# --- PRODUTO 2: Gráfico G3 (Valores Absolutos R$) ---
+grafico_g3 <- ggplot(df_idrgp_2025, aes(y = reorder(str_remove(subprefeitura, "Subprefeitura( de)? "), idrgp_alvo))) +
+  geom_col(aes(x = valor_executado, fill = status_valor), width = 0.65, alpha = 0.9) +
+  geom_point(aes(x = valor_previsto, shape = "Valor Previsto (R$)"), color = "#c0392b", size = 3) +
+  scale_fill_manual(values = c("Valor previsto (R$) superado" = "#1A1442", "Valor previsto (R$) não atingido" = "#d97a0f"), name = "Status:") +
+  scale_shape_manual(values = c("Valor Previsto (R$)" = 18), name = "") +
+  scale_x_continuous(labels = scales::label_number(prefix = "R$ ", scale_cut = scales::cut_short_scale(), decimal.mark = ",")) +
+  labs(title = "IDRGP 2025 — Valor Previsto e Executado (R$)", x = "Valor (R$)", y = NULL, caption = caption_base)
+
+ggsave(file.path(pasta_saida, "graficos", "Produto2_valores_absolutos.png"), grafico_g3, width = 10, height = 12, dpi = 300, bg="white")
+
+# --- PRODUTO 3: Gráfico G4 (Série Histórica) ---
+grafico_g4 <- ggplot(df_longo, aes(y = reorder(str_remove(subprefeitura, "Subprefeitura( de)? "), idrgp_alvo), x = valor_ano, fill = ano_empenho)) +
+  geom_col(width = 0.65, alpha = 0.9, position = position_stack(reverse = FALSE)) +
+  geom_point(data = df_ciclo, aes(y = str_remove(subprefeitura, "Subprefeitura( de)? "), x = idrgp_alvo * MARCO_PPA, shape = "Valor Previsto Ciclo (R$ 5B)"), 
+             shape = 23, fill = "white", color = "#c0392b", size = 3.2, inherit.aes = FALSE) +
+  scale_fill_manual(values = c("2025" = "#9BD7EA", "2024" = "#4CB7D8", "2023" = "#1F78B4", "2022" = "#0B3C6D"), name = "Ano") +
+  scale_x_continuous(labels = scales::label_number(prefix = "R$ ", scale_cut = scales::cut_short_scale(), decimal.mark = ",")) +
+  labs(title = "IDRGP 2022–2025 — Evolução do Gasto Real (R$)", subtitle = "Barras empilhadas por ano. Losango mostra proporção dos R$ 5 Bilhões.", x = "Valor Acumulado (R$)", y = NULL, caption = caption_base)
+
+ggsave(file.path(pasta_saida, "graficos", "Produto3_serie_historica.png"), grafico_g4, width = 14, height = 12, dpi = 300, bg="white")
+```
+
+```{r mapas, message=FALSE, warning=FALSE}
+# --- PRODUTO 4: Mapa Coroplético (Balanço do PPA em Quartis) ---
+# Juntamos os dados com o arquivo espacial das subprefeituras
+df_ciclo <- df_ciclo |>
+  mutate(percentual_ciclo = (valor_acumulado / total_municipio) * 100)
+
+breaks_pct <- quantile(df_ciclo$percentual_ciclo, probs = seq(0, 1, by = 0.25), na.rm = TRUE)
+labels_quartis <- c("1º Quartil", "2º Quartil", "3º Quartil", "4º Quartil")
+df_ciclo$cat_balanco <- cut(df_ciclo$percentual_ciclo, breaks = breaks_pct, include.lowest = TRUE, labels = labels_quartis)
+
+sf_balanco <- sf_sp |> left_join(df_ciclo, by = "join_key")
+
+mapa_balanco <- ggplot(sf_balanco) +
+  geom_sf(aes(fill = cat_balanco), color = "white", linewidth = 0.5) +
+  scale_fill_manual(values = c("#9BD7EA", "#4CB7D8", "#1F78B4", "#0B3C6D"), name = "Participação no\nciclo (%)") +
+  geom_sf_text(aes(label = sigla), size = 3, color = "gray10", fontface = "bold") +
+  labs(title = "Distribuição Territorial Relativa (2022–2025)", caption = caption_base) +
+  theme_void()
+
+ggsave(file.path(pasta_saida, "mapas", "Produto4_mapa_coropletico_balanco_ppa.png"), mapa_balanco, width = 12, height = 10, dpi = 300, bg="white")
+
+# --- PRODUTO 6: Mapas Individuais das Subprefeituras com Distritos ---
+# Certifica que os mapas usam a mesma projeção espacial global (WGS84)
+sf::sf_use_s2(FALSE)
+subprefeitura_sf <- st_transform(st_make_valid(sf_balanco), 4326)
+distritos_sf <- st_transform(st_make_valid(distritos_sf), 4326)
+
+# Join espacial: Descobrir em qual subprefeitura cada distrito está baseado no centróide
+distritos_cent <- st_centroid(distritos_sf)
+cent_join <- st_join(distritos_cent, subprefeitura_sf |> select(subprefeitura), join = st_within)
+distritos_sf$subprefeitura_geo <- cent_join$subprefeitura
+
+bbox_sp <- st_bbox(subprefeitura_sf)
+
+# Para identificar dinamicamente a coluna do nome do distrito:
+col_distrito_nome <- intersect(names(distritos_sf), c("ds_nome", "nm_distrito", "ds_codigo", "nome"))[1]
+
+# Geramos o mapa individual para cada subprefeitura
+for (sp in unique(subprefeitura_sf$subprefeitura)) {
+  # Filtramos as feições exclusivas da vez
+  sub_ativa <- subprefeitura_sf |> filter(subprefeitura == sp)
+  distritos_ativos <- distritos_sf |> filter(subprefeitura_geo == sp)
+  
+  # Capturamos a cor baseada no quartil do balanço (Produto 4)
+  cor_sp <- switch(as.character(sub_ativa$cat_balanco),
+                   "1º Quartil" = "#9BD7EA", "2º Quartil" = "#4CB7D8", "3º Quartil" = "#1F78B4", "4º Quartil" = "#0B3C6D", "#CCCCCC")
+  
+  p <- ggplot() +
+    # Fundo do município
+    geom_sf(data = subprefeitura_sf, fill = "#EAEAEA", color = "gray60") +
+    # Contorno e destaque da subprefeitura
+    geom_sf(data = sub_ativa, fill = cor_sp, color = "gray20", linewidth = 0.7) +
+    # Divisões dos distritos internos (se encontrados via join geográfico)
+    geom_sf(data = distritos_ativos, fill = NA, color = "gray20", linetype = "dashed") +
+    # Nome dos distritos (se a coluna for identificada)
+    { if(!is.na(col_distrito_nome)) geom_sf_text(data = distritos_ativos, aes(label = .data[[col_distrito_nome]]), size = 2) } +
+    coord_sf(xlim = bbox_sp[c(1, 3)], ylim = bbox_sp[c(2, 4)], expand = TRUE) +
+    ggspatial::annotation_scale(location = "br", width_hint = 0.3) +
+    ggspatial::annotation_north_arrow(location = "br", which_north = "true", style = ggspatial::north_arrow_minimal()) +
+    theme_void()
+  
+  nome_arq <- paste0("mapa_", janitor::make_clean_names(sp), ".png")
+  ggsave(file.path(pasta_saida, "mapas_subprefeituras", nome_arq), p, width = 10, height = 8, dpi = 300, bg="white")
+}
+sf::sf_use_s2(TRUE)
+```
+
+# 10. Exportação dos Produtos Finais (Tabelas Abertas)
+
+Abaixo consolidamos as tabelas de referência para a sociedade civil, facilitando cruzamentos abertos e auditorias sem necessidade de programação.
+
+```{r exportacao_tabelas}
+# --- Tabela 5: Distância ao Marco R$ 5 Bilhões ---
+df_distancia <- df_ciclo |>
+  mutate(
+    alvo_5b = idrgp_alvo * MARCO_PPA, # Meta (em reais) se os 5bi fossem distribuídos hoje perfeitamente pelo IVU
+    distancia_abs = valor_acumulado - alvo_5b, # Diferença financeira 
+    pct_alcancado = (valor_acumulado / alvo_5b) * 100 # Se atingiu 100% da sua parcela dos 5B
+  ) |>
+  select(
+    Subprefeitura = subprefeitura, Sigla = sigla,
+    `IDRGP Alvo (%)` = idrgp_alvo, `Gasto Real Ciclo (R$)` = valor_acumulado,
+    `Alvo 5B (R$)` = alvo_5b, `Distância (R$)` = distancia_abs, `% Alcançado` = pct_alcancado
+  ) |> arrange(desc(`Distância (R$)`))
+
+# Salva o produto
+write_xlsx(df_distancia, file.path(pasta_saida, "tabelas", "Produto5_distancia_marco_5b.xlsx"))
+
+# Exibe a tabela no próprio relatório Rmd
+datatable(df_distancia, options = list(pageLength = 10, scrollX = TRUE)) |>
+  formatCurrency(c("Gasto Real Ciclo (R$)", "Alvo 5B (R$)", "Distância (R$)"), currency = "R$ ", mark = ".", dec.mark = ",") |>
+  formatPercentage("IDRGP Alvo (%)", 2)
+```
+
+# 11. Considerações Metodológicas Finais
+
+Este código foi modularizado e limpo, visando garantir a **transparência** e a **reprodutibilidade**:
+* O script executa de maneira idêntica em qualquer máquina, com o uso de arquivos estáticos de pastas locais relativas (`here::here()`).
+* Todas as lógicas envolvendo filtros obscuros, ou servidores de bancos fechados, foram superadas utilizando diretamente a base `base_resumida_ppa_idrgp.xlsx`, que funciona como a _Single Source of Truth_.
+* A agregação é didaticamente feita de forma independente para (1) O ano de apuração e (2) a visão agregada histórica.
+* A espacialização utiliza processamento reprodutível em CRSs universais e unindo subprefeituras e distritos via centróides matemáticos.
