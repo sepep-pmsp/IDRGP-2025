@@ -1,4 +1,4 @@
-# IDRGP 2025 — Distribuição Regional do Gasto Público no Município de São Paulo
+# IDRGP 2025 — Índice de distribuição Regional do Gasto Público no Município de São Paulo
 
 Repositório dedicado à produção, análise e publicação dos produtos técnicos do **IDRGP 2025** (Índice de Distribuição Regional do Gasto Público), desenvolvido a partir do ciclo do Plano Plurianual (PPA 2022–2025) do Município de São Paulo.
 
