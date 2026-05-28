@@ -173,7 +173,7 @@ ivu_raw <- read_excel(file.path(pasta_dados, "ivu_subprefeituras_2025.xlsx")) |>
 ivu_df <- ivu_raw |>
   transmute(
     subprefeitura = nome_subpref,
-    ivu = as.numeric(indice_ivu) 
+    ivu = as.numeric(ivu_geral) 
   ) |>
   mutate(join_key = norm_name(subprefeitura))
 
