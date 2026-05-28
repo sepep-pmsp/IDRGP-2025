@@ -16,7 +16,7 @@ output:
 
 # 1. Apresentação do Projeto
 
-O **Índice de Distribuição Regional do Gasto Público (IDRGP)** é uma ferramenta de monitoramento da equidade territorial no orçamento municipal. Ele compara o percentual do orçamento gasto em uma subprefeitura (IDRGP Real) com uma meta ideal (IDRGP Alvo), baseada no Índice de Vulnerabilidade Urbana (IVU).
+O **Índice de Distribuição Regional do Gasto Público (IDRGP)** é uma ferramenta de monitoramento da equidade territorial no orçamento municipal. Ele compara a alocação orçamentária regionalizada realizada por subprefeitura (AOR ou IDRGP Real), calculada a partir de uma cesta de 87 ações orçamentáiras, com uma alocação orçamentária regionalizada esperada (AOE ou IDRGP Alvo), baseada no Índice de Vulnerabilidade Urbana (IVU).
 
 O objetivo deste documento é fornecer uma análise **reprodutível** e **transparente** da execução orçamentária territorializada no município de São Paulo, abrangendo o ciclo do Plano Plurianual (PPA) de 2022 a 2025.
 
@@ -149,7 +149,7 @@ ivu_raw <- read_excel(file.path(pasta_dados, "ivu_subprefeituras_2025.xlsx")) |>
 ivu_df <- ivu_raw |>
   transmute(
     subprefeitura = nome_subpref,
-    ivu = as.numeric(indice_ivu) # Asseguramos que o campo IVU será numérico
+    ivu = as.numeric(ivu_geral) # Asseguramos que o campo IVU será numérico
   ) |>
   mutate(join_key = norm_name(subprefeitura))
 
@@ -187,10 +187,10 @@ dados_base <- dados_brutos_raw |>
 Para calcular o IDRGP (Índice de Distribuição Regional do Gasto Público), agrupamos os valores em dois momentos: no ano de referência (2025) e o acumulado do ciclo (2022-2025).
 
 A lógica matemática do IDRGP é:
-* **IDRGP Real (%)**: Gastos efetivados na Subprefeitura / Total Gasto na Cidade.
-* **IDRGP Alvo (%)**: Proporção do IVU da Subprefeitura / Somatória do IVU da Cidade.
+* **AOR (IDRGP Real) (%)**: Alocação orçamentária realizada no território da Subprefeitura / Total de recursos realizados dentro da cesta de 87 ações orçamentárias selecionadas para a análise.
+* **AOE (IDRGP Alvo) (%)**: Proporção do IVU da Subprefeitura / Somatória do IVU da Cidade.
 
-Se o IDRGP Real for substancialmente menor que o IDRGP Alvo, entendemos que o gasto daquela região ficou abaixo da meta de vulnerabilidade estipulada.
+Se o AOR for substancialmente menor que o AOE, entendemos que o gasto daquela região ficou abaixo do esperado vulnerabilidade estipulada.
 
 ```{r indicadores, message=FALSE, warning=FALSE}
 # --- 1. Agregações para 2025 ---
